@@ -99,5 +99,60 @@
         "snow_clouds": "Snow and clouds"
       }
     }
+  },
+  "entity": {
+    "switch": {
+      "enabled": {
+        "name": "Enable effects"
+      },
+      "respect_reduced_motion": {
+        "name": "Respect device reduced-motion preference"
+      }
+    },
+    "select": {
+      "mode": {
+        "name": "Mode",
+        "state": {
+          "manual": "Manual",
+          "automatic": "Automatic"
+        }
+      },
+      "effect": {
+        "name": "Manual effect",
+        "state": {
+          "off": "Off",
+          "snow": "Snow",
+          "rain": "Rain",
+          "sun": "Sun",
+          "clouds": "Clouds",
+          "partlycloudy": "Sun and clouds",
+          "rain_clouds": "Rain and clouds",
+          "snow_clouds": "Snow and clouds"
+        }
+      }
+    },
+    "number": {
+      "forecast_offset": {
+        "name": "Forecast offset"
+      },
+      "speed": {
+        "name": "Speed multiplier"
+      },
+      "size": {
+        "name": "Size multiplier"
+      },
+      "density": {
+        "name": "Particle count / cloud density"
+      },
+      "opacity": {
+        "name": "Opacity"
+      },
+      "wind": {
+        "name": "Wind (negative = left)"
+      },
+      "max_fps": {
+        "name": "Maximum frames per second"
+      }
+    }
   }
 }

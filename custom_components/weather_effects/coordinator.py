@@ -2,6 +2,7 @@
 import asyncio
 from datetime import timedelta
 import logging
+import math
 
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
@@ -9,7 +10,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
-from .const import DEFAULTS, DOMAIN
+from .const import CONTROL_KEYS, DEFAULTS, DOMAIN, NUMBER_CONTROLS, SELECT_CONTROLS, SWITCH_CONTROLS
 from .logic import select_weather
 
 _LOGGER = logging.getLogger(__name__)
@@ -28,6 +29,8 @@ class WeatherEffectsCoordinator(DataUpdateCoordinator):
         self._fetched_at = None
         self._unsub_states = None
         self._forecast_error = None
+        self._control_lock = asyncio.Lock()
+        self._reconfigure_lock = asyncio.Lock()
 
     @callback
     def bind_states(self):
@@ -48,11 +51,61 @@ class WeatherEffectsCoordinator(DataUpdateCoordinator):
             self._unsub_states()
             self._unsub_states = None
 
+    async def async_set_control(self, key, value):
+        """Persist one validated control; the options listener applies it once.
+
+        HA's async_update_entry is a synchronous event-loop callback: reading,
+        merging and writing options under this lock cannot lose another control's
+        update. Never write a partial options dictionary (it replaces all options).
+        """
+        async with self._control_lock:
+            if not isinstance(key, str) or key not in CONTROL_KEYS:
+                raise HomeAssistantError("Unknown Weather Effects control")
+            if key in SWITCH_CONTROLS:
+                valid = type(value) is bool
+            elif key in SELECT_CONTROLS:
+                valid = isinstance(value, str) and value in SELECT_CONTROLS[key]
+            else:
+                minimum, maximum, step = NUMBER_CONTROLS[key]
+                valid = (type(value) in (int, float) and minimum <= value <= maximum
+                         and math.isfinite(value))
+                if valid:
+                    steps = (value - minimum) / step
+                    valid = minimum <= value <= maximum and math.isclose(
+                        steps, round(steps), rel_tol=0, abs_tol=1e-8)
+                if valid:
+                    # Normalize floating-point slider artifacts and integer steps.
+                    value = round(minimum + round(steps) * step, 10)
+                    if step == 1:
+                        value = int(value)
+            if not valid:
+                raise HomeAssistantError(f"Invalid value for Weather Effects control: {key}")
+            options = {**DEFAULTS, **(self.entry.options or self.entry.data)}
+            if key == "mode" and value == "automatic":
+                weather_entity = options.get("weather_entity")
+                if not isinstance(weather_entity, str) or not weather_entity.startswith("weather.") or not weather_entity[8:]:
+                    raise HomeAssistantError("Automatic mode requires a configured weather entity")
+            if options.get(key) == value:
+                return
+            options[key] = value
+            self.hass.config_entries.async_update_entry(self.entry, options=options)
+
     async def reconfigure(self):
-        self.settings = {**DEFAULTS, **(self.entry.options or self.entry.data)}
-        self._fetched_at = None
-        self.bind_states()
-        await self.async_refresh()
+        """Apply the latest options once, preserving unrelated forecast caches."""
+        async with self._reconfigure_lock:
+            settings = {**DEFAULTS, **(self.entry.options or self.entry.data)}
+            if settings == self.settings:
+                return
+            if any(settings.get(key) != self.settings.get(key) for key in (
+                "weather_entity", "mode", "forecast_offset"
+            )):
+                self._forecast = []
+                self._forecast_entity = None
+                self._fetched_at = None
+                self._forecast_error = None
+            self.settings = settings
+            self.bind_states()
+            await self.async_refresh()
 
     async def _async_update_data(self):
         cfg = dict(self.settings)

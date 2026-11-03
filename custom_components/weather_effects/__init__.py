@@ -6,11 +6,39 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.const import Platform
 from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
+from homeassistant.helpers import entity_registry as er
 
-from .const import DOMAIN, FRONTEND_URL, SIGNAL_UPDATED
+from .const import CONTROL_KEYS, DOMAIN, FRONTEND_URL, SIGNAL_UPDATED, VERSION
 from .coordinator import WeatherEffectsCoordinator
 
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.SWITCH, Platform.SELECT, Platform.NUMBER]
+
+
+@callback
+def profile_payload(hass, coordinator):
+    """Resolve registry IDs instead of guessing generated or user-renamed entity IDs."""
+    registry = er.async_get(hass)
+    prefix = coordinator.entry.entry_id
+    controls = {}
+    for entity in er.async_entries_for_config_entry(registry, prefix):
+        if entity.disabled_by is not None:
+            continue
+        for key in CONTROL_KEYS:
+            if entity.domain == CONTROL_KEYS[key] and entity.unique_id == f"{prefix}_control_{key}":
+                controls[key] = entity.entity_id
+                break
+        if entity.domain == "sensor" and entity.unique_id == f"{prefix}_effect":
+            controls["status"] = entity.entity_id
+    gate_id = coordinator.settings.get("enable_entity")
+    gate = hass.states.get(gate_id) if gate_id else None
+    return {
+        **coordinator.data,
+        "controls": controls,
+        "configured_enabled": bool(coordinator.settings["enabled"]),
+        "effective_enabled": coordinator.data["enabled"],
+        "gate_entity": gate_id,
+        "gate_enabled": gate.state == "on" if gate else None,
+    }
 
 
 async def async_setup(hass, config):
@@ -20,7 +48,15 @@ async def async_setup(hass, config):
         StaticPathConfig("/weather_effects_static", str(Path(__file__).parent / "frontend"), False)
     ])
     frontend.add_extra_js_url(hass, FRONTEND_URL)
+    frontend.add_extra_js_url(hass, f"/weather_effects_static/weather-effects-card.js?v={VERSION}")
     websocket_api.async_register_command(hass, websocket_subscribe)
+
+    @callback
+    def registry_changed(event):
+        # Entity IDs can be renamed or disabled after a card has been configured.
+        async_dispatcher_send(hass, SIGNAL_UPDATED)
+
+    hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, registry_changed)
     return True
 
 
@@ -62,7 +98,7 @@ def websocket_subscribe(hass, connection, msg):
     """Stream resolved settings; no tokens or external API calls in the browser."""
     @callback
     def send():
-        configs = [c.data for c in hass.data[DOMAIN]["entries"].values() if c.data]
+        configs = [profile_payload(hass, c) for c in hass.data[DOMAIN]["entries"].values() if c.data]
         connection.send_event(msg["id"], configs)
 
     connection.subscriptions[msg["id"]] = async_dispatcher_connect(hass, SIGNAL_UPDATED, send)

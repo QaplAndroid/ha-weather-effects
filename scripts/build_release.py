@@ -60,6 +60,15 @@ def translations():
                    "options": {"step": {"init": form}, "error": ERRORS[lang]},
                    "selector": {"mode": {"options": {"manual": "Manual" if lang == "en" else "Ručno", "automatic": "Automatic" if lang == "en" else "Automatski"}},
                                 "effect": {"options": effects}}}
+        content["entity"] = {
+            "switch": {key: {"name": labels[key]} for key in ("enabled", "respect_reduced_motion")},
+            "select": {
+                "mode": {"name": labels["mode"], "state": content["selector"]["mode"]["options"]},
+                "effect": {"name": labels["effect"], "state": effects},
+            },
+            "number": {key: {"name": labels[key]} for key in (
+                "forecast_offset", "speed", "size", "density", "opacity", "wind", "max_fps")},
+        }
         target = COMPONENT / "translations" / f"{lang}.json"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(content, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -68,7 +77,8 @@ def translations():
 
 
 def archive():
-    output = ROOT / "dist" / "weather-effects-0.1.0.zip"
+    version = json.loads((COMPONENT / "manifest.json").read_text(encoding="utf-8"))["version"]
+    output = ROOT / "dist" / f"weather-effects-{version}.zip"
     output.parent.mkdir(exist_ok=True)
     with ZipFile(output, "w", ZIP_DEFLATED) as bundle:
         for path in sorted(COMPONENT.rglob("*")):

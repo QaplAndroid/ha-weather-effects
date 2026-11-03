@@ -2,7 +2,7 @@
 
 Snijeg, kiša, sunce i oblaci kao animirani sloj preko **odabranih dashboarda**. Vlastita integracija (custom component), nije Supervisor add-on. Bez HTML kartice, card_mod-a, Lovelace resursa i ručnog uređivanja dashboard YAML-a.
 
-**Verzija 0.1.0 — prva verzija za provjeru na stvarnom Home Assistantu.** Kod i simulacije provjereni su lokalno; nije pokrenut stvarni Home Assistant niti provjerena instalacija na tvojoj instanci. Ciljane API mogućnosti: HA 2025.6+ (`async_register_static_paths`, options flow, `weather.get_forecasts`). Kompatibilnost svake HA verzije nije potvrđena.
+**Verzija 0.2.0 — dashboard kontrolna kartica i standardni HA kontrolni entiteti.** Kod i simulacije provjereni su lokalno; nije pokrenut stvarni Home Assistant niti provjerena instalacija na tvojoj instanci. Ciljane API mogućnosti: HA 2025.6+ (`async_register_static_paths`, options flow, `weather.get_forecasts`). Kompatibilnost svake HA verzije nije potvrđena.
 
 ## Instalacija kroz HACS (custom repository)
 
@@ -19,7 +19,7 @@ HACS instalaciju također treba potvrditi na stvarnoj instanci; lokalni testovi 
 
 ## Ručna instalacija (alternativa)
 
-1. Preuzmi `weather-effects-0.1.0.zip` sa stranice [Releases](https://github.com/QaplAndroid/ha-weather-effects/releases) i raspakiraj ga na računalu.
+1. Preuzmi `weather-effects-0.2.0.zip` sa stranice [Releases](https://github.com/QaplAndroid/ha-weather-effects/releases) i raspakiraj ga na računalu.
 2. Kopiraj njegovu mapu `custom_components/weather_effects` u HA konfiguracijsku mapu, tako da dobiješ `/config/custom_components/weather_effects/manifest.json`. Ako `custom_components` već postoji, kopiraj samo podmapu `weather_effects` u njega. Nemoj prepisivati druge integracije.
    - Koristi npr. Samba share ili Studio Code Server. Konfiguracijska mapa je ista ona u kojoj se nalazi `configuration.yaml`; na Container/Core instalaciji može biti na drugoj host putanji.
 3. **Ponovno pokreni Home Assistant**, ne samo ponovno učitaj YAML.
@@ -29,6 +29,45 @@ HACS instalaciju također treba potvrditi na stvarnoj instanci; lokalni testovi 
 7. Kad potvrdiš da nova integracija radi, ukloni staru conditional/html-card karticu s pahuljicama da se efekti ne udvostručuju. `html-card`/`card_mod` ne moraš uklanjati ako ih koristiš drugdje.
 
 Nakon instalacije sve je podesivo kroz **Weather Effects → Konfiguriraj**. Promjene se šalju otvorenim preglednicima bez ponovnog pokretanja HA-a.
+
+## Kontrolni dashboard bez YAML-a (novo u 0.2.0)
+
+Integracija sada daje **Weather Effects Control Card** koja se može dodati kroz standardni vizualni odabir kartica. Ne stvara i ne mijenja dashboarde automatski te ne dira tvoje postojeće kartice.
+
+### Ako već imaš 0.1.0
+
+U HACS-u ažuriraj **Weather Effects** na 0.2.0 (po potrebi provjeri nova izdanja ili ponovno preuzmi), restartaj HA i potpuno osvježi preglednik. Ne trebaš brisati integraciju ni ponovno stvarati profil. Novi `switch`, `select` i `number` entiteti dodaju se pri pokretanju. Kod ručne instalacije zamijeni mapu integracije sadržajem novog ZIP-a.
+
+### Dodavanje posebnog dashboarda
+
+1. **Postavke → Dashboardi → Dodaj dashboard** i napravi prazan dashboard, npr. **Vrijeme i efekti**. Nazivi opcija malo se razlikuju po HA verziji. Omogući prikaz u bočnoj traci ako ga želiš.
+2. Otvori ga → **Uredi dashboard → Dodaj karticu**.
+3. Pronađi **Weather Effects Control Card**.
+4. U vizualnom editoru odaberi profil integracije i, po želji, naziv kartice. Ako postoji samo jedan profil, može se odabrati automatski.
+5. Spremi. Nije potrebno ručno dodavati JS u dashboard resurse.
+
+Kartica također može stajati na bilo kojem postojećem dashboardu; ne mora biti među dashboardima na kojima padaju pahuljice. Ako želiš vidjeti efekte dok ih podešavaš, dodaj i kontrolni dashboard na popis odabranih dashboarda u konfiguraciji profila.
+
+### Što se podešava na kartici
+
+- Uključeno/isključeno, ručni/automatski način i ručni efekt.
+- Brzina, veličina, gustoća, neprozirnost i vjetar.
+- Pomak satne prognoze, najviše FPS i poštivanje smanjenog kretanja.
+- Status trenutačno odabranog efekta, vremenski entitet, izvor podataka i vrijeme odabrane prognoze.
+
+Promjene se spremaju u iste postavke profila kao kroz **Konfiguriraj**, vrijede na svim klijentima i ostaju nakon restarta. Klizači šalju promjenu pri završetku pomicanja, ne na svakom kadru. U automatskom načinu ručni odabir efekta je zaključan; prvo prebaci način na ručni. Automatski način traži prethodno odabran weather entitet.
+
+Odabir dashboarda, weather entiteta i opcionalnog uvjetnog prekidača ostaje u **Uređaji i usluge → Weather Effects → Konfiguriraj**. Kartica ima poveznicu do integracije; za te administrativne postavke treba odgovarajuća HA dozvola.
+
+Ako je glavni prekidač uključen, a `input_boolean.christmasmode` isključen, efekt se i dalje ne prikazuje. Kartica razlikuje spremljeno uključivanje od stvarno aktivnog efekta. Također poštuje nedostupne/isključene entitete i prikazuje greške HA poziva umjesto da prijavi lažno spremanje.
+
+### Standardni HA entiteti i vlastiti raspored
+
+Na uređaju profila pronaći ćeš dva `switch` entiteta (uključivanje i smanjeno kretanje), dva `select` entiteta (način i efekt), sedam `number` entiteta (pomak, brzina, veličina, gustoća, neprozirnost, vjetar, FPS) te postojeći statusni senzor. HA dodjeljuje ID-eve; kartica ih pronalazi preko registra, pa radi i nakon preimenovanja.
+
+Ako želiš vlastiti raspored, dodaj te entitete kroz standardnu HA **Entities** ili **Tile** karticu. Mogu se koristiti i u automatizacijama. Kontrolna kartica koristi standardne `switch`, `select` i `number` akcije, s redovnim HA dozvolama korisnika.
+
+Ako kartice nema u pretrazi, prvo provjeri da je integracija učitana, restartaj HA i potpuno osvježi/ponovno otvori klijent. Prikaz, editor i HACS ažuriranje još treba potvrditi na stvarnoj HA instanci.
 
 ## Preporučene prve postavke
 
@@ -106,7 +145,7 @@ Bez instalacije HA-a, vanjskih Python paketa ili npm ovisnosti:
 
 ```powershell
 python -m unittest discover -s tests -p "test_*.py" -v
-node --test --test-isolation=none tests/frontend.test.mjs
+node --test --test-isolation=none tests/frontend.test.mjs tests/card.test.mjs
 python -m compileall -q custom_components scripts tests
 python scripts/build_release.py
 ```

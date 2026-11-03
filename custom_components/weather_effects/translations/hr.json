@@ -99,5 +99,60 @@
         "snow_clouds": "Snijeg i oblaci"
       }
     }
+  },
+  "entity": {
+    "switch": {
+      "enabled": {
+        "name": "Uključi efekte"
+      },
+      "respect_reduced_motion": {
+        "name": "Poštuj postavku smanjenog kretanja uređaja"
+      }
+    },
+    "select": {
+      "mode": {
+        "name": "Način rada",
+        "state": {
+          "manual": "Ručno",
+          "automatic": "Automatski"
+        }
+      },
+      "effect": {
+        "name": "Efekt u ručnom načinu",
+        "state": {
+          "off": "Isključeno",
+          "snow": "Snijeg",
+          "rain": "Kiša",
+          "sun": "Sunce",
+          "clouds": "Oblaci",
+          "partlycloudy": "Sunce i oblaci",
+          "rain_clouds": "Kiša i oblaci",
+          "snow_clouds": "Snijeg i oblaci"
+        }
+      }
+    },
+    "number": {
+      "forecast_offset": {
+        "name": "Pomak prognoze u budućnost"
+      },
+      "speed": {
+        "name": "Brzina (množitelj)"
+      },
+      "size": {
+        "name": "Veličina (množitelj)"
+      },
+      "density": {
+        "name": "Broj čestica / gustoća oblaka"
+      },
+      "opacity": {
+        "name": "Neprozirnost"
+      },
+      "wind": {
+        "name": "Vjetar (negativno = ulijevo)"
+      },
+      "max_fps": {
+        "name": "Najveći broj sličica u sekundi"
+      }
+    }
   }
 }
