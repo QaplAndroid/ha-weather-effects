@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 // HA serves an ES module, without requiring a package.json in the integration.
 const source = await readFile(new URL('../custom_components/weather_effects/frontend/weather-effects.js', import.meta.url), 'utf8');
-const { normalizeDashboard, normalizeConfig, effectLayers, matchesDashboard, activeConfigs, WeatherEffectsOverlay, MAX_PARTICLES, EFFECTS, scenePrimitiveCount, allocateBudget } =
+const { normalizeDashboard, normalizeConfig, effectLayers, matchesDashboard, activeConfigs, WeatherEffectsOverlay, MAX_PARTICLES, EFFECTS, scenePrimitiveCount, allocateBudget, cloudSilhouette } =
   await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 const config = (extra = {}) => normalizeConfig({ id: 'test', enabled: true, dashboards: ['lovelace', 'dashboard-home'], effect: 'snow', ...extra });
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
@@ -69,6 +69,31 @@ function mockEnvironment() {
   };
   return { win, doc, context, canvases, raf, intervals, motion, connection, tick };
 }
+
+test('cloud sprites use closed lobed silhouettes, distinct variants and stronger adjustable contrast', () => {
+  const paths = [0, 1].map(variant => {
+    const calls = [];
+    const ctx = new Proxy({}, { get: (_, name) => (...args) => calls.push([name, ...args]) });
+    cloudSilhouette(ctx, variant);
+    assert.equal(calls[0][0], 'beginPath');
+    assert.equal(calls.at(-1)[0], 'closePath');
+    assert.equal(calls.filter(call => call[0] === 'bezierCurveTo').length, 8);
+    assert.ok(calls.flatMap(call => call.slice(1)).every(Number.isFinite));
+    return calls;
+  });
+  assert.notDeepEqual(paths[0], paths[1]);
+  const env = mockEnvironment(), overlay = new WeatherEffectsOverlay(env.win, env.doc);
+  overlay.dpr = 1;
+  const cloud = overlay.sprite('cloud0');
+  assert.equal(overlay.sprite('cloud0'), cloud, 'silhouette remains cached');
+  overlay.ctx = env.context; overlay.width = 1200; overlay.height = 800;
+  const scene = {config: config({opacity: 0.65}), cloudSprite: 'cloud', time: 0,
+    clouds: [{x: 200, y: 100, depth: 0.6, scale: 1, phase: 0, variant: 0}]};
+  overlay.drawClouds(scene, 0);
+  assert.ok(env.context.globalAlpha > 0.45 && env.context.globalAlpha < 0.65);
+  scene.config.opacity = 0.1; overlay.drawClouds(scene, 0);
+  assert.ok(env.context.globalAlpha < 0.1, 'user opacity still controls clouds');
+});
 
 test('dashboard normalization and route matching are exact, not substrings', () => {
   assert.equal(normalizeDashboard(' /Dashboard-Home/ '), 'dashboard-home');

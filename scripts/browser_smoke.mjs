@@ -92,11 +92,23 @@ try {
     assert.equal(result.effect, effect);
     if (effect === 'off') assert.equal(result.frame, false);
     else { assert.ok(result.painted > 0, `${effect}: no visible real-canvas pixels`); assert.equal(result.pointerEvents, 'none'); }
-    if (['snow', 'rain_clouds', 'partlycloudy', 'fog', 'wind', 'night', 'hail', 'storm'].includes(effect)) {
+    if (['clouds', 'snow', 'rain_clouds', 'partlycloudy', 'fog', 'wind', 'night', 'hail', 'storm'].includes(effect)) {
       const { data } = await command('Page.captureScreenshot', { format: 'png' });
       await writeFile(join(output, `${effect}.png`), Buffer.from(data, 'base64'));
     }
     results.push(result);
+  }
+  const cloudShapes = await evaluate(`(() => {
+    const overlay = window.weatherEffectsDemo.overlay;
+    return ['cloud0','cloud1','darkCloud0','darkCloud1'].map(name => {
+      const sprite = overlay.sprites.get(name), ctx = sprite.getContext('2d'), dpr = overlay.dpr;
+      const alpha = (x,y) => ctx.getImageData(Math.floor(x*dpr),Math.floor(y*dpr),1,1).data[3];
+      return {name, center: alpha(160,90), corner: alpha(10,10)};
+    });
+  })()`);
+  for (const cloud of cloudShapes) {
+    assert.ok(cloud.center > 220, `${cloud.name}: cloud body is still too diffuse`);
+    assert.equal(cloud.corner, 0, `${cloud.name}: sprite should have transparent surroundings`);
   }
   await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
   await evaluate('window.weatherEffectsDemo.setEffect("fog")');

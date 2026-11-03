@@ -9,6 +9,28 @@ export const EFFECTS = Object.freeze({
   downpour: ["clouds", "downpour"], storm: ["storm_clouds", "wind", "rain"],
   storm_clouds: ["storm_clouds", "wind"],
 });
+// One closed cumulus silhouette: rounded lobes, a broad base and no ellipse seams.
+export function cloudSilhouette(ctx, variant = 0) {
+  ctx.beginPath(); ctx.moveTo(65, 130);
+  if (variant % 2 === 0) {
+    ctx.bezierCurveTo(38, 130, 22, 115, 24, 95);
+    ctx.bezierCurveTo(26, 75, 43, 62, 65, 66);
+    ctx.bezierCurveTo(68, 42, 87, 29, 110, 35);
+    ctx.bezierCurveTo(125, 9, 168, 10, 185, 42);
+    ctx.bezierCurveTo(210, 32, 237, 45, 242, 68);
+    ctx.bezierCurveTo(270, 63, 293, 81, 296, 102);
+  } else {
+    ctx.bezierCurveTo(39, 130, 22, 114, 27, 94);
+    ctx.bezierCurveTo(31, 75, 45, 68, 63, 70);
+    ctx.bezierCurveTo(65, 39, 95, 23, 124, 43);
+    ctx.bezierCurveTo(140, 17, 179, 24, 188, 49);
+    ctx.bezierCurveTo(212, 36, 242, 48, 245, 72);
+    ctx.bezierCurveTo(273, 67, 295, 82, 296, 102);
+  }
+  ctx.bezierCurveTo(299, 122, 280, 136, 255, 136);
+  ctx.bezierCurveTo(204, 140, 112, 140, 65, 130);
+  ctx.closePath();
+}
 // Each array item is one animated visual primitive; celestial bodies are cached sprites.
 const SCENE_ARRAYS = ["clouds", "fog", "wind", "rain", "snow", "hail", "ripples", "stars", "sun", "moon"];
 const SPRITE_KEYS = new Set(["cloud0", "cloud1", "darkCloud0", "darkCloud1", "fog", "snow0", "snow1", "snow2", "hail", "star", "sun", "moon"]);
@@ -231,7 +253,7 @@ export class WeatherEffectsOverlay {
           life: Math.random(),
         }));
       });
-      for (const cloud of scene.clouds) cloud.y = 25 + Math.random() * Math.min(this.height * 0.24, 180);
+      for (const cloud of scene.clouds) cloud.y = Math.min(this.height * 0.42, 80 + Math.random() * Math.min(this.height * 0.18, 145));
       for (const bank of scene.fog) bank.y = this.height * (0.72 + Math.random() * 0.27);
       for (const star of scene.stars) star.y *= 0.48;
       // Warm only the sprites used here. The finite key set caps cache size at 12;
@@ -247,7 +269,7 @@ export class WeatherEffectsOverlay {
       return scene;
     });
   }
-  // Rasterize soft volume once, not overlapping hard-edged ellipse paths per frame.
+  // Cache shaped cloud silhouettes and soft fog separately, never rasterize per frame.
   sprite(name) {
     if (!SPRITE_KEYS.has(name)) return null;
     if (this.sprites.has(name)) return this.sprites.get(name);
@@ -265,22 +287,32 @@ export class WeatherEffectsOverlay {
       g.addColorStop(1, `rgba(${color},0)`);
       c.fillStyle = g; c.fillRect(x - radius, y - radius, radius * 2, radius * 2);
     };
-    if (cloud || name === "fog") {
-      const dark = name.startsWith("dark"), fog = name === "fog";
-      // Seeded texture stays stable across rebuilds and avoids animation noise.
-      let seed = name.endsWith("1") ? 127 : 23;
+    if (cloud) {
+      const dark = name.startsWith("dark"), variant = name.endsWith("1") ? 1 : 0;
+      // Clear silhouette with soft internal shading, rather than a blurred bank.
+      const body = c.createLinearGradient(0, 25, 0, 142);
+      body.addColorStop(0, dark ? "#b8c5d8" : "#ffffff");
+      body.addColorStop(0.52, dark ? "#8395ae" : "#e6f0f8");
+      body.addColorStop(1, dark ? "#475d78" : "#a5bdd2");
+      c.save(); cloudSilhouette(c, variant);
+      c.shadowColor = dark ? "rgba(12,23,41,0.25)" : "rgba(25,47,70,0.15)";
+      c.shadowBlur = 5; c.shadowOffsetY = 3; c.fillStyle = body; c.fill();
+      c.shadowBlur = 0; c.shadowOffsetY = 0;
+      c.clip();
+      glow(variant ? 104 : 147, 56, 49, dark ? "219,230,242" : "255,255,255", 0.38);
+      glow(218, 86, 38, dark ? "192,210,230" : "255,255,255", 0.24);
+      glow(79, 94, 35, dark ? "192,210,230" : "255,255,255", 0.2);
+      c.restore();
+      cloudSilhouette(c, variant); c.lineWidth = 1.1;
+      c.strokeStyle = dark ? "rgba(223,236,250,0.3)" : "rgba(255,255,255,0.65)";
+      c.stroke();
+    } else if (name === "fog") {
+      // Fog intentionally stays diffuse; it must not become a row of cloud icons.
+      let seed = 23;
       const random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
-      c.save(); c.translate(160, fog ? 48 : 84); c.scale(1, fog ? 0.25 : 0.63);
+      c.save(); c.translate(160, 48); c.scale(1, 0.25);
       for (let i = 0; i < 34; i++) {
-        const x = (random() - 0.5) * 208, y = (random() - 0.5) * (fog ? 60 : 70);
-        const radius = 30 + random() * 36;
-        glow(x, y, radius, dark ? "66,79,103" : fog ? "219,232,239" : "187,206,223", fog ? 0.12 : 0.21);
-      }
-      if (!fog) {
-        for (let i = 0; i < 18; i++) {
-          glow((random() - 0.5) * 200, -14 - random() * 36, 22 + random() * 26,
-            dark ? "121,137,158" : "251,253,255", dark ? 0.13 : 0.24);
-        }
+        glow((random() - 0.5) * 208, (random() - 0.5) * 60, 30 + random() * 36, "219,232,239", 0.12);
       }
       c.restore();
     } else if (name.startsWith("snow")) {
@@ -385,7 +417,7 @@ export class WeatherEffectsOverlay {
     for (const p of clouds) {
       p.x += (5 + c.wind * 14) * c.speed * p.depth * dt;
       this.wrap(p, 250 * p.scale);
-      this.ctx.globalAlpha = c.opacity * (cloudSprite === "darkCloud" ? 0.53 : 0.52) * (0.7 + p.depth * 0.3);
+      this.ctx.globalAlpha = c.opacity * (cloudSprite === "darkCloud" ? 0.88 : 0.82) * (0.82 + p.depth * 0.18);
       this.image(cloudSprite + p.variant % 2, p.x, p.y + Math.sin(time * 0.14 + p.phase) * 4, 320 * p.scale, 160 * p.scale);
     }
   }

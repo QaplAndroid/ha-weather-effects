@@ -1,7 +1,7 @@
 {
   "domain": "weather_effects",
   "name": "Weather Effects",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "config_flow": true,
   "dependencies": ["frontend", "http", "websocket_api", "weather"],
   "documentation": "https://github.com/QaplAndroid/ha-weather-effects",

@@ -2,7 +2,7 @@
 
 Snijeg, kiša, sunce i oblaci kao animirani sloj preko **odabranih dashboarda**. Vlastita integracija (custom component), nije Supervisor add-on. Bez HTML kartice, card_mod-a, Lovelace resursa i ručnog uređivanja dashboard YAML-a.
 
-**Verzija 0.3.0 — prirodniji efekti, magla, vjetar i cjelovitija vremenska stanja.** Kod i simulacije provjereni su lokalno; nije pokrenut stvarni Home Assistant niti provjerena instalacija na tvojoj instanci. Ciljane API mogućnosti: HA 2025.6+ (`async_register_static_paths`, options flow, `weather.get_forecasts`). Kompatibilnost svake HA verzije nije potvrđena.
+**Verzija 0.3.1 — jasnije oblikovani i vidljiviji oblaci, uz maglu, vjetar i ostala vremenska stanja.** Kod i simulacije provjereni su lokalno; nije pokrenut stvarni Home Assistant niti provjerena instalacija na tvojoj instanci. Ciljane API mogućnosti: HA 2025.6+ (`async_register_static_paths`, options flow, `weather.get_forecasts`). Kompatibilnost svake HA verzije nije potvrđena.
 
 ## Instalacija kroz HACS (custom repository)
 
@@ -19,7 +19,7 @@ HACS instalaciju također treba potvrditi na stvarnoj instanci; lokalni testovi 
 
 ## Ručna instalacija (alternativa)
 
-1. Preuzmi `weather-effects-0.3.0.zip` sa stranice [Releases](https://github.com/QaplAndroid/ha-weather-effects/releases) i raspakiraj ga na računalu.
+1. Preuzmi `weather-effects-0.3.1.zip` sa stranice [Releases](https://github.com/QaplAndroid/ha-weather-effects/releases) i raspakiraj ga na računalu.
 2. Kopiraj njegovu mapu `custom_components/weather_effects` u HA konfiguracijsku mapu, tako da dobiješ `/config/custom_components/weather_effects/manifest.json`. Ako `custom_components` već postoji, kopiraj samo podmapu `weather_effects` u njega. Nemoj prepisivati druge integracije.
    - Koristi npr. Samba share ili Studio Code Server. Konfiguracijska mapa je ista ona u kojoj se nalazi `configuration.yaml`; na Container/Core instalaciji može biti na drugoj host putanji.
 3. **Ponovno pokreni Home Assistant**, ne samo ponovno učitaj YAML.
@@ -36,7 +36,7 @@ Integracija sada daje **Weather Effects Control Card** koja se može dodati kroz
 
 ### Ako već imaš 0.1.0 ili 0.2.0
 
-U HACS-u ažuriraj **Weather Effects** na 0.3.0 (po potrebi provjeri nova izdanja ili ponovno preuzmi), restartaj HA i potpuno osvježi preglednik. Ne trebaš brisati integraciju ni ponovno stvarati profil. Novi `switch`, `select` i `number` entiteti dodaju se pri pokretanju. Kod ručne instalacije zamijeni mapu integracije sadržajem novog ZIP-a.
+U HACS-u ažuriraj **Weather Effects** na 0.3.1 (po potrebi provjeri nova izdanja ili ponovno preuzmi), restartaj HA i potpuno osvježi preglednik. Ne trebaš brisati integraciju ni ponovno stvarati profil. Novi `switch`, `select` i `number` entiteti dodaju se pri pokretanju. Kod ručne instalacije zamijeni mapu integracije sadržajem novog ZIP-a.
 
 ### Dodavanje posebnog dashboarda
 
@@ -116,9 +116,10 @@ Obuhvaćena su sva standardna HA vremenska stanja. Ovo su **dekorativni, stilizi
 
 Trenutačni `sun.sun`, ako postoji, služi za razlikovanje dana/noći kod trenutačnog stanja. Buduća prognoza koristi vlastiti `is_daytime` ako ga pružatelj daje, nikad današnje stanje sunca za budući sat. Bez takvog podatka zadržava se simbol koji je dao pružatelj.
 
-### Grafika u 0.3.0
+### Grafika u 0.3.1
 
-- Mekši oblaci s teksturom i dubinom umjesto tvrdih kružnih rubova.
+- Prepoznatljiva silueta oblaka s oblim vrhovima, jasnim rubom i zasjenjenim donjim dijelom. Dvije varijante oblika, svjetlija dnevna i tamnija olujna paleta.
+- Oblaci su kontrastniji od 0.3.0 i raspoređeni malo niže radi vidljivije siluete. Klizač neprozirnosti i dalje ih može učiniti diskretnijima. Magla ostaje zaseban mekan, razmazan efekt.
 - Više dubinskih slojeva kiše, različite pahuljice i nježni sunčevi oreoli.
 - Posebni efekti za maglu i nalete vjetra, bez neprozirnog pokrivanja kartica.
 - Predmemorirane grafičke teksture, ograničen broj čestica, pauza u pozadini i poštivanje smanjenog kretanja i dalje vrijede.
