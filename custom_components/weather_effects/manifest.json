@@ -1,0 +1,12 @@
+{
+  "domain": "weather_effects",
+  "name": "Weather Effects",
+  "version": "0.1.0",
+  "config_flow": true,
+  "dependencies": ["frontend", "http", "websocket_api", "weather"],
+  "documentation": "https://github.com/QaplAndroid/ha-weather-effects",
+  "issue_tracker": "https://github.com/QaplAndroid/ha-weather-effects/issues",
+  "codeowners": ["@QaplAndroid"],
+  "iot_class": "calculated",
+  "requirements": []
+}

@@ -1,0 +1,30 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Python unit tests (mocked Home Assistant)
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Frontend unit tests (mocked browser)
+        run: node --test --test-isolation=none tests/frontend.test.mjs
+      - name: Compile Python
+        run: python -m compileall -q custom_components scripts tests
+      - name: Build and verify manual installation archive
+        run: |
+          python scripts/build_release.py
+          python scripts/verify_release.py

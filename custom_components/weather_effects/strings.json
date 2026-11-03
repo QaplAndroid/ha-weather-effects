@@ -1,0 +1,103 @@
+{
+  "title": "Weather Effects",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Weather Effects",
+        "data": {
+          "name": "Profile name",
+          "enabled": "Enable effects",
+          "dashboards": "Selected dashboards",
+          "mode": "Mode",
+          "effect": "Manual effect",
+          "weather_entity": "Weather entity",
+          "enable_entity": "Optional enable switch",
+          "forecast_offset": "Forecast offset",
+          "speed": "Speed multiplier",
+          "size": "Size multiplier",
+          "density": "Particle count / cloud density",
+          "opacity": "Opacity",
+          "wind": "Wind (negative = left)",
+          "respect_reduced_motion": "Respect device reduced-motion preference",
+          "max_fps": "Maximum frames per second"
+        },
+        "data_description": {
+          "dashboards": "Select dashboards or enter their URL path, e.g. lovelace or dashboard-home. No full URL, leading slash or view path. Effects never appear in settings.",
+          "weather_entity": "Required only in automatic mode. Suggested entity: weather.forecast_work_work.",
+          "enable_entity": "Optional: select input_boolean.christmasmode or another switch. Effects run only while it is on. Clear this field to stop using it.",
+          "forecast_offset": "0 = current conditions; +1 to +72 = nearest hourly forecast. Outside forecast coverage or on errors, fall back to current conditions (see diagnostic sensor).",
+          "effect": "Used in manual mode only. Automatic mode chooses effects from the weather entity.",
+          "respect_reduced_motion": "Pause effects if your browser or operating system requests reduced motion. Turn off only if you want to override that preference."
+        },
+        "description": "Choose where and how weather effects appear. All options can be changed later."
+      }
+    },
+    "error": {
+      "dashboard_required": "Select at least one dashboard.",
+      "invalid_dashboard": "Enter a dashboard URL path, not a full URL, view path or settings panel.",
+      "name_required": "Enter a profile name.",
+      "weather_required": "Select a weather entity for automatic mode.",
+      "entity_missing": "This entity does not exist or has the wrong domain."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Weather Effects",
+        "data": {
+          "name": "Profile name",
+          "enabled": "Enable effects",
+          "dashboards": "Selected dashboards",
+          "mode": "Mode",
+          "effect": "Manual effect",
+          "weather_entity": "Weather entity",
+          "enable_entity": "Optional enable switch",
+          "forecast_offset": "Forecast offset",
+          "speed": "Speed multiplier",
+          "size": "Size multiplier",
+          "density": "Particle count / cloud density",
+          "opacity": "Opacity",
+          "wind": "Wind (negative = left)",
+          "respect_reduced_motion": "Respect device reduced-motion preference",
+          "max_fps": "Maximum frames per second"
+        },
+        "data_description": {
+          "dashboards": "Select dashboards or enter their URL path, e.g. lovelace or dashboard-home. No full URL, leading slash or view path. Effects never appear in settings.",
+          "weather_entity": "Required only in automatic mode. Suggested entity: weather.forecast_work_work.",
+          "enable_entity": "Optional: select input_boolean.christmasmode or another switch. Effects run only while it is on. Clear this field to stop using it.",
+          "forecast_offset": "0 = current conditions; +1 to +72 = nearest hourly forecast. Outside forecast coverage or on errors, fall back to current conditions (see diagnostic sensor).",
+          "effect": "Used in manual mode only. Automatic mode chooses effects from the weather entity.",
+          "respect_reduced_motion": "Pause effects if your browser or operating system requests reduced motion. Turn off only if you want to override that preference."
+        },
+        "description": "Choose where and how weather effects appear. All options can be changed later."
+      }
+    },
+    "error": {
+      "dashboard_required": "Select at least one dashboard.",
+      "invalid_dashboard": "Enter a dashboard URL path, not a full URL, view path or settings panel.",
+      "name_required": "Enter a profile name.",
+      "weather_required": "Select a weather entity for automatic mode.",
+      "entity_missing": "This entity does not exist or has the wrong domain."
+    }
+  },
+  "selector": {
+    "mode": {
+      "options": {
+        "manual": "Manual",
+        "automatic": "Automatic"
+      }
+    },
+    "effect": {
+      "options": {
+        "off": "Off",
+        "snow": "Snow",
+        "rain": "Rain",
+        "sun": "Sun",
+        "clouds": "Clouds",
+        "partlycloudy": "Sun and clouds",
+        "rain_clouds": "Rain and clouds",
+        "snow_clouds": "Snow and clouds"
+      }
+    }
+  }
+}

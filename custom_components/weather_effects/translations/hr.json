@@ -1,0 +1,103 @@
+{
+  "title": "Weather Effects",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Weather Effects",
+        "data": {
+          "name": "Naziv profila",
+          "enabled": "Uključi efekte",
+          "dashboards": "Odabrani dashboardi",
+          "mode": "Način rada",
+          "effect": "Efekt u ručnom načinu",
+          "weather_entity": "Weather entitet",
+          "enable_entity": "Neobavezni prekidač za uključivanje",
+          "forecast_offset": "Pomak prognoze u budućnost",
+          "speed": "Brzina (množitelj)",
+          "size": "Veličina (množitelj)",
+          "density": "Broj čestica / gustoća oblaka",
+          "opacity": "Neprozirnost",
+          "wind": "Vjetar (negativno = ulijevo)",
+          "respect_reduced_motion": "Poštuj postavku smanjenog kretanja uređaja",
+          "max_fps": "Najveći broj sličica u sekundi"
+        },
+        "data_description": {
+          "dashboards": "Odaberi dashboarde ili upiši njihov URL put, npr. lovelace ili dashboard-home. Bez pune adrese, početne kose crte i putanje prikaza. Efekti se ne prikazuju u postavkama.",
+          "weather_entity": "Obavezno samo u automatskom načinu. Predloženi entitet: weather.forecast_work_work.",
+          "enable_entity": "Neobavezno: odaberi input_boolean.christmasmode ili drugi prekidač. Efekti tada rade samo dok je uključen. Isprazni polje za uklanjanje uvjeta.",
+          "forecast_offset": "0 = trenutačno vrijeme; +1 do +72 = najbliža satna prognoza. Izvan raspona prognoze ili kod greške koristi se trenutačno stanje (vidi dijagnostički senzor).",
+          "effect": "Koristi se samo u ručnom načinu. Automatski način bira efekt prema vremenskom entitetu.",
+          "respect_reduced_motion": "Zaustavi efekte ako uređaj ili preglednik traži smanjeno kretanje. Isključi samo ako želiš zanemariti tu postavku."
+        },
+        "description": "Odaberi gdje i kako se prikazuju vremenski efekti. Sve postavke možeš kasnije promijeniti."
+      }
+    },
+    "error": {
+      "dashboard_required": "Odaberi barem jedan dashboard.",
+      "invalid_dashboard": "Upiši URL put dashboarda, ne punu adresu, prikaz ili stranicu postavki.",
+      "name_required": "Upiši naziv profila.",
+      "weather_required": "Odaberi weather entitet za automatski način.",
+      "entity_missing": "Entitet ne postoji ili nije odgovarajuće vrste."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Weather Effects",
+        "data": {
+          "name": "Naziv profila",
+          "enabled": "Uključi efekte",
+          "dashboards": "Odabrani dashboardi",
+          "mode": "Način rada",
+          "effect": "Efekt u ručnom načinu",
+          "weather_entity": "Weather entitet",
+          "enable_entity": "Neobavezni prekidač za uključivanje",
+          "forecast_offset": "Pomak prognoze u budućnost",
+          "speed": "Brzina (množitelj)",
+          "size": "Veličina (množitelj)",
+          "density": "Broj čestica / gustoća oblaka",
+          "opacity": "Neprozirnost",
+          "wind": "Vjetar (negativno = ulijevo)",
+          "respect_reduced_motion": "Poštuj postavku smanjenog kretanja uređaja",
+          "max_fps": "Najveći broj sličica u sekundi"
+        },
+        "data_description": {
+          "dashboards": "Odaberi dashboarde ili upiši njihov URL put, npr. lovelace ili dashboard-home. Bez pune adrese, početne kose crte i putanje prikaza. Efekti se ne prikazuju u postavkama.",
+          "weather_entity": "Obavezno samo u automatskom načinu. Predloženi entitet: weather.forecast_work_work.",
+          "enable_entity": "Neobavezno: odaberi input_boolean.christmasmode ili drugi prekidač. Efekti tada rade samo dok je uključen. Isprazni polje za uklanjanje uvjeta.",
+          "forecast_offset": "0 = trenutačno vrijeme; +1 do +72 = najbliža satna prognoza. Izvan raspona prognoze ili kod greške koristi se trenutačno stanje (vidi dijagnostički senzor).",
+          "effect": "Koristi se samo u ručnom načinu. Automatski način bira efekt prema vremenskom entitetu.",
+          "respect_reduced_motion": "Zaustavi efekte ako uređaj ili preglednik traži smanjeno kretanje. Isključi samo ako želiš zanemariti tu postavku."
+        },
+        "description": "Odaberi gdje i kako se prikazuju vremenski efekti. Sve postavke možeš kasnije promijeniti."
+      }
+    },
+    "error": {
+      "dashboard_required": "Odaberi barem jedan dashboard.",
+      "invalid_dashboard": "Upiši URL put dashboarda, ne punu adresu, prikaz ili stranicu postavki.",
+      "name_required": "Upiši naziv profila.",
+      "weather_required": "Odaberi weather entitet za automatski način.",
+      "entity_missing": "Entitet ne postoji ili nije odgovarajuće vrste."
+    }
+  },
+  "selector": {
+    "mode": {
+      "options": {
+        "manual": "Ručno",
+        "automatic": "Automatski"
+      }
+    },
+    "effect": {
+      "options": {
+        "off": "Isključeno",
+        "snow": "Snijeg",
+        "rain": "Kiša",
+        "sun": "Sunce",
+        "clouds": "Oblaci",
+        "partlycloudy": "Sunce i oblaci",
+        "rain_clouds": "Kiša i oblaci",
+        "snow_clouds": "Snijeg i oblaci"
+      }
+    }
+  }
+}
