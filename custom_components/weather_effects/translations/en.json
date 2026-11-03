@@ -19,7 +19,13 @@
           "opacity": "Opacity",
           "wind": "Wind (negative = left)",
           "respect_reduced_motion": "Respect device reduced-motion preference",
-          "max_fps": "Maximum frames per second"
+          "max_fps": "Maximum frames per second",
+          "settings_effect": "Edit settings for effect",
+          "adaptive_weather": "Adapt intensity to weather data",
+          "heat_threshold": "Heat threshold (°C)",
+          "lightning_enabled": "Enable lightning flashes (photosensitivity warning)",
+          "lightning_interval": "Minimum lightning interval (seconds)",
+          "lightning_brightness": "Lightning wash brightness"
         },
         "data_description": {
           "dashboards": "Select dashboards or enter their URL path, e.g. lovelace or dashboard-home. No full URL, leading slash or view path. Effects never appear in settings.",
@@ -27,7 +33,17 @@
           "enable_entity": "Optional: select input_boolean.christmasmode or another switch. Effects run only while it is on. Clear this field to stop using it.",
           "forecast_offset": "0 = current conditions; +1 to +72 = nearest hourly forecast. Outside forecast coverage or on errors, fall back to current conditions (see diagnostic sensor).",
           "effect": "Used in manual mode only. Automatic mode chooses effects from the weather entity.",
-          "respect_reduced_motion": "Pause effects if your browser or operating system requests reduced motion. Turn off only if you want to override that preference."
+          "respect_reduced_motion": "Pause effects if your device requests reduced motion. Lightning is ALWAYS disabled by reduced motion, even if this switch is off.",
+          "adaptive_weather": "Automatic mode only: adapt to available temperature, cloud coverage, rainfall and wind. Missing values keep the saved preset; rainfall may be an hourly forecast estimate.",
+          "heat_threshold": "Above this Celsius temperature, sunny effects gain a warmer glow and subtle heat haze.",
+          "lightning_enabled": "Warning: flashing light can affect photosensitive users. Off by default. Enable explicitly for storm effects; never active with reduced motion.",
+          "lightning_interval": "One brief flash at most per interval across all profiles. Minimum 5 seconds; no rapid or repeated strobe bursts.",
+          "lightning_brightness": "Maximum screen-wash alpha, capped at 0.25. The bolt itself is more visible. Use low values if enabling flashes.",
+          "speed": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card.",
+          "size": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card.",
+          "density": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card.",
+          "opacity": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card.",
+          "wind": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card."
         },
         "description": "Choose where and how weather effects appear. All options can be changed later."
       }
@@ -59,7 +75,13 @@
           "opacity": "Opacity",
           "wind": "Wind (negative = left)",
           "respect_reduced_motion": "Respect device reduced-motion preference",
-          "max_fps": "Maximum frames per second"
+          "max_fps": "Maximum frames per second",
+          "settings_effect": "Edit settings for effect",
+          "adaptive_weather": "Adapt intensity to weather data",
+          "heat_threshold": "Heat threshold (°C)",
+          "lightning_enabled": "Enable lightning flashes (photosensitivity warning)",
+          "lightning_interval": "Minimum lightning interval (seconds)",
+          "lightning_brightness": "Lightning wash brightness"
         },
         "data_description": {
           "dashboards": "Select dashboards or enter their URL path, e.g. lovelace or dashboard-home. No full URL, leading slash or view path. Effects never appear in settings.",
@@ -67,7 +89,17 @@
           "enable_entity": "Optional: select input_boolean.christmasmode or another switch. Effects run only while it is on. Clear this field to stop using it.",
           "forecast_offset": "0 = current conditions; +1 to +72 = nearest hourly forecast. Outside forecast coverage or on errors, fall back to current conditions (see diagnostic sensor).",
           "effect": "Used in manual mode only. Automatic mode chooses effects from the weather entity.",
-          "respect_reduced_motion": "Pause effects if your browser or operating system requests reduced motion. Turn off only if you want to override that preference."
+          "respect_reduced_motion": "Pause effects if your device requests reduced motion. Lightning is ALWAYS disabled by reduced motion, even if this switch is off.",
+          "adaptive_weather": "Automatic mode only: adapt to available temperature, cloud coverage, rainfall and wind. Missing values keep the saved preset; rainfall may be an hourly forecast estimate.",
+          "heat_threshold": "Above this Celsius temperature, sunny effects gain a warmer glow and subtle heat haze.",
+          "lightning_enabled": "Warning: flashing light can affect photosensitive users. Off by default. Enable explicitly for storm effects; never active with reduced motion.",
+          "lightning_interval": "One brief flash at most per interval across all profiles. Minimum 5 seconds; no rapid or repeated strobe bursts.",
+          "lightning_brightness": "Maximum screen-wash alpha, capped at 0.25. The bolt itself is more visible. Use low values if enabling flashes.",
+          "speed": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card.",
+          "size": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card.",
+          "density": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card.",
+          "opacity": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card.",
+          "wind": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card."
         },
         "description": "Choose where and how weather effects appear. All options can be changed later."
       }
@@ -105,7 +137,29 @@
         "hail": "Hail",
         "sleet": "Sleet",
         "downpour": "Heavy rain",
-        "storm": "Thunderstorm (no flashes)",
+        "storm": "Thunderstorm",
+        "storm_clouds": "Storm clouds"
+      }
+    },
+    "settings_effect": {
+      "options": {
+        "off": "Off",
+        "snow": "Snow",
+        "rain": "Rain",
+        "sun": "Sun",
+        "clouds": "Clouds",
+        "partlycloudy": "Sun and clouds",
+        "rain_clouds": "Rain and clouds",
+        "snow_clouds": "Snow and clouds",
+        "fog": "Fog",
+        "wind": "Wind",
+        "wind_clouds": "Wind and clouds",
+        "night": "Clear night",
+        "night_clouds": "Moon and clouds",
+        "hail": "Hail",
+        "sleet": "Sleet",
+        "downpour": "Heavy rain",
+        "storm": "Thunderstorm",
         "storm_clouds": "Storm clouds"
       }
     }
@@ -117,6 +171,12 @@
       },
       "respect_reduced_motion": {
         "name": "Respect device reduced-motion preference"
+      },
+      "adaptive_weather": {
+        "name": "Adapt intensity to weather data"
+      },
+      "lightning_enabled": {
+        "name": "Enable lightning flashes (photosensitivity warning)"
       }
     },
     "select": {
@@ -146,7 +206,30 @@
           "hail": "Hail",
           "sleet": "Sleet",
           "downpour": "Heavy rain",
-          "storm": "Thunderstorm (no flashes)",
+          "storm": "Thunderstorm",
+          "storm_clouds": "Storm clouds"
+        }
+      },
+      "settings_effect": {
+        "name": "Edit settings for effect",
+        "state": {
+          "off": "Off",
+          "snow": "Snow",
+          "rain": "Rain",
+          "sun": "Sun",
+          "clouds": "Clouds",
+          "partlycloudy": "Sun and clouds",
+          "rain_clouds": "Rain and clouds",
+          "snow_clouds": "Snow and clouds",
+          "fog": "Fog",
+          "wind": "Wind",
+          "wind_clouds": "Wind and clouds",
+          "night": "Clear night",
+          "night_clouds": "Moon and clouds",
+          "hail": "Hail",
+          "sleet": "Sleet",
+          "downpour": "Heavy rain",
+          "storm": "Thunderstorm",
           "storm_clouds": "Storm clouds"
         }
       }
@@ -172,6 +255,15 @@
       },
       "max_fps": {
         "name": "Maximum frames per second"
+      },
+      "heat_threshold": {
+        "name": "Heat threshold (°C)"
+      },
+      "lightning_interval": {
+        "name": "Minimum lightning interval (seconds)"
+      },
+      "lightning_brightness": {
+        "name": "Lightning wash brightness"
       }
     }
   }

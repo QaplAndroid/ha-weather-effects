@@ -38,6 +38,11 @@ def schema(hass, current):
         vol.Required("wind", default=values["wind"]): number(-2, 2, 0.1),
         vol.Required("respect_reduced_motion", default=values["respect_reduced_motion"]): selector.BooleanSelector(),
         vol.Required("max_fps", default=values["max_fps"]): number(15, 60, 1),
+        vol.Required("adaptive_weather", default=values["adaptive_weather"]): selector.BooleanSelector(),
+        vol.Required("heat_threshold", default=values["heat_threshold"]): number(25, 45, 1, "°C"),
+        vol.Required("lightning_enabled", default=values["lightning_enabled"]): selector.BooleanSelector(),
+        vol.Required("lightning_interval", default=values["lightning_interval"]): number(5, 60, 1, "s"),
+        vol.Required("lightning_brightness", default=values["lightning_brightness"]): number(0.05, 0.25, 0.05),
     }
     return vol.Schema(fields)
 
@@ -96,6 +101,14 @@ class WeatherEffectsOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             errors = validate(self.hass, user_input)
             if not errors:
-                return self.async_create_entry(title="", data=user_input)
+                # This general form edits legacy defaults, not effect presets.
+                # Preserve hidden per-effect storage, while allowing optional
+                # entity fields omitted from this submission to be removed.
+                current = self.config_entry.options or self.config_entry.data
+                saved = dict(user_input)
+                for key in ("effect_settings", "settings_effect"):
+                    if key in current:
+                        saved[key] = current[key]
+                return self.async_create_entry(title="", data=saved)
         current = self.config_entry.options or self.config_entry.data
         return self.async_show_form(step_id="init", data_schema=schema(self.hass, user_input or current), errors=errors)

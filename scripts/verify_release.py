@@ -34,10 +34,14 @@ effects = next(ast.literal_eval(node.value) for node in constants.body
                if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "EFFECTS"
                                                        for target in node.targets))
 assert set(effects) == set(english["selector"]["effect"]["options"]), "Effect selector translation mismatch"
+assert set(effects) == set(english["selector"]["settings_effect"]["options"]), "Preset selector translation mismatch"
+assert set(effects) == set(english["entity"]["select"]["settings_effect"]["state"]), "Native preset translation mismatch"
 assert set(effects) == set(english["entity"]["select"]["effect"]["state"]), "Native effect translation mismatch"
 for platform, controls in {
-    "switch": ("enabled", "respect_reduced_motion"), "select": ("mode", "effect"),
-    "number": ("forecast_offset", "speed", "size", "density", "opacity", "wind", "max_fps"),
+    "switch": ("enabled", "respect_reduced_motion", "adaptive_weather", "lightning_enabled"),
+    "select": ("mode", "effect", "settings_effect"),
+    "number": ("forecast_offset", "speed", "size", "density", "opacity", "wind", "max_fps",
+               "heat_threshold", "lightning_interval", "lightning_brightness"),
 }.items():
     for key in controls:
         assert english["entity"][platform][key]["name"], f"Missing entity translation: {key}"
@@ -49,7 +53,7 @@ with ZipFile(archive) as bundle:
     for required in ("manifest.json", "__init__.py", "config_flow.py", "coordinator.py", "sensor.py",
                      "logic.py", "compat.py", "const.py", "strings.json", "translations/hr.json",
                      "translations/en.json", "frontend/weather-effects.js", "frontend/weather-effects-card.js",
-                     "entity.py", "switch.py", "select.py", "number.py"):
+                     "entity.py", "switch.py", "select.py", "number.py", "presets.py", "intensity.py"):
         assert f"custom_components/weather_effects/{required}" in names, required
     assert "README.md" in names and "LICENSE" in names
     assert not any("__pycache__" in name or name.endswith(".pyc") for name in names)

@@ -1,6 +1,6 @@
 """Constants for Weather Effects."""
 DOMAIN = "weather_effects"
-VERSION = "0.3.1"
+VERSION = "0.4.0"
 SIGNAL_UPDATED = f"{DOMAIN}_updated"
 FRONTEND_URL = f"/weather_effects_static/weather-effects.js?v={VERSION}"
 DEFAULT_WEATHER = "weather.forecast_work_work"
@@ -10,8 +10,8 @@ EFFECTS = (
     "storm", "storm_clouds",
 )
 # Shared by native platforms, validation, and registry-ID lookup for the frontend.
-SWITCH_CONTROLS = ("enabled", "respect_reduced_motion")
-SELECT_CONTROLS = {"mode": ("manual", "automatic"), "effect": EFFECTS}
+SWITCH_CONTROLS = ("enabled", "respect_reduced_motion", "adaptive_weather", "lightning_enabled")
+SELECT_CONTROLS = {"mode": ("manual", "automatic"), "effect": EFFECTS, "settings_effect": EFFECTS}
 NUMBER_CONTROLS = {
     "forecast_offset": (0, 72, 1),
     "speed": (0.2, 3, 0.1),
@@ -20,6 +20,9 @@ NUMBER_CONTROLS = {
     "opacity": (0.05, 1, 0.05),
     "wind": (-2, 2, 0.1),
     "max_fps": (15, 60, 1),
+    "heat_threshold": (25, 45, 1),
+    "lightning_interval": (5, 60, 1),
+    "lightning_brightness": (0.05, 0.25, 0.05),
 }
 CONTROL_KEYS = {
     **dict.fromkeys(SWITCH_CONTROLS, "switch"),
@@ -39,4 +42,9 @@ DEFAULTS = {
     "wind": 0.2,
     "respect_reduced_motion": True,
     "max_fps": 30,
+    "adaptive_weather": True,
+    "lightning_enabled": False,
+    "heat_threshold": 30,
+    "lightning_interval": 12,
+    "lightning_brightness": 0.10,
 }

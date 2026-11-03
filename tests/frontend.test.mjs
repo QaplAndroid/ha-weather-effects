@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 // HA serves an ES module, without requiring a package.json in the integration.
 const source = await readFile(new URL('../custom_components/weather_effects/frontend/weather-effects.js', import.meta.url), 'utf8');
-const { normalizeDashboard, normalizeConfig, effectLayers, matchesDashboard, activeConfigs, WeatherEffectsOverlay, MAX_PARTICLES, EFFECTS, scenePrimitiveCount, allocateBudget, cloudSilhouette } =
+const { normalizeDashboard, normalizeConfig, effectLayers, matchesDashboard, activeConfigs, WeatherEffectsOverlay, MAX_PARTICLES, EFFECTS, scenePrimitiveCount, allocateBudget, cloudSilhouette, LightningScheduler } =
   await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 const config = (extra = {}) => normalizeConfig({ id: 'test', enabled: true, dashboards: ['lovelace', 'dashboard-home'], effect: 'snow', ...extra });
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
@@ -20,10 +20,10 @@ function mockEnvironment() {
     };
   };
   const context = new Proxy({
-    clearCount: 0, drawCount: 0, fillRects: [],
+    clearCount: 0, drawCount: 0, fillRects: [], fillAlphas: [],
     clearRect() { this.clearCount++; },
     drawImage(image, ...coords) { assert.ok(image, 'sprite must already exist'); assert.ok(coords.every(Number.isFinite)); this.drawCount++; },
-    fillRect(...coords) { this.fillRects.push(coords); },
+    fillRect(...coords) { this.fillRects.push(coords); this.fillAlphas.push(this.globalAlpha); },
     createRadialGradient() { return { addColorStop() {} }; },
     createLinearGradient() { return { addColorStop() {} }; },
   }, {
@@ -45,7 +45,8 @@ function mockEnvironment() {
   const raf = new Map(), intervals = new Map();
   let id = 0;
   const motion = { ...events(), matches: false };
-  const win = { ...events(), innerWidth: 1200, innerHeight: 800, devicePixelRatio: 3,
+  let clock = 0;
+  const win = { ...events(), performance: { now: () => clock }, innerWidth: 1200, innerHeight: 800, devicePixelRatio: 3,
     location: { pathname: '/lovelace/main', search: '' }, matchMedia: () => motion,
     setInterval(callback, ms) { assert.equal(ms, 1000); intervals.set(++id, callback); return id; },
     clearInterval(id) { intervals.delete(id); },
@@ -64,11 +65,158 @@ function mockEnvironment() {
     return conn;
   };
   const tick = time => {
+    clock = time;
     const callbacks = [...raf.values()]; raf.clear();
     callbacks.forEach(callback => callback(time));
   };
   return { win, doc, context, canvases, raf, intervals, motion, connection, tick };
 }
+
+test('intensity and lightning normalization is finite, clamped and strictly opt-in', () => {
+  assert.deepEqual(config().intensity, {heat: 0, cloud: null, rain: null, wind: null});
+  assert.equal(config().lightning_enabled, false);
+  assert.equal(config().lightning_interval, 12); assert.equal(config().lightning_brightness, 0.1);
+  for (const enabled of [1, 'true', false, null, undefined]) assert.equal(config({lightning_enabled: enabled}).lightning_enabled, false);
+  const c = config({intensity: {heat: Infinity, cloud: -1, rain: 2, wind: '1'}, lightning_interval: 1, lightning_brightness: 99});
+  assert.deepEqual(c.intensity, {heat: 0, cloud: 0, rain: 1, wind: null});
+  assert.equal(c.lightning_interval, 5); assert.equal(c.lightning_brightness, 0.25);
+  assert.equal(config({lightning_interval: Infinity}).lightning_interval, 12);
+  assert.equal(config({lightning_interval: 100}).lightning_interval, 60);
+  assert.equal(config({lightning_brightness: -1}).lightning_brightness, 0.05);
+});
+
+test('one pure lightning scheduler preserves global cooldown across metadata, rebuilds and profiles', () => {
+  const scheduler = new LightningScheduler();
+  const storm = config({effect: 'storm', lightning_enabled: true, lightning_interval: 5});
+  scheduler.update([storm, {...storm, id: 'second'}], true, 0);
+  assert.equal(scheduler.step(4999), null);
+  assert.equal(scheduler.step(5000).serial, 1);
+  assert.equal(scheduler.step(5100).serial, 1);
+  assert.equal(scheduler.step(5220), null);
+  scheduler.update([{...storm, id: 'renamed'}, storm], true, 6000);
+  assert.equal(scheduler.nextAt, 10000);
+  assert.equal(scheduler.step(9999), null);
+  assert.equal(scheduler.step(10000).serial, 2);
+  scheduler.update([storm], false, 10001);
+  assert.equal(scheduler.flash, null);
+  scheduler.update([storm], true, 20000);
+  assert.equal(scheduler.nextAt, 25000, 'resume waits a fresh interval');
+  assert.equal(scheduler.step(24999), null);
+  assert.equal(scheduler.step(25000).serial, 3);
+  scheduler.update([{...storm, lightning_interval: 12}], true, 25001);
+  assert.equal(scheduler.flash, null); assert.equal(scheduler.nextAt, 37001);
+});
+
+test('heat is sun-only, cloud intensity increases darker coverage, rain and wind are not scaled twice', async () => {
+  const env = mockEnvironment(), conn = env.connection(); env.doc.root = {hass: {connection: conn}};
+  const overlay = new WeatherEffectsOverlay(env.win, env.doc).start(); await flush();
+  for (const effect of Object.keys(EFFECTS).filter(e => e !== 'off')) {
+    conn.callback([config({effect, intensity: {heat: 0}})]);
+    assert.equal(overlay.scenes[0].heat.length, 0); assert.equal(overlay.scenes[0].heatGlow.length, 0);
+    const oldScenes = overlay.scenes;
+    conn.callback([config({effect, intensity: {heat: 1}})]);
+    assert.notEqual(overlay.scenes, oldScenes);
+    assert.equal(overlay.scenes[0].heat.length > 0, ['sun', 'partlycloudy'].includes(effect), effect);
+    const allocations = env.canvases.length;
+    env.tick(100); env.tick(200); assert.equal(env.canvases.length, allocations);
+  }
+  conn.callback([config({effect: 'clouds', intensity: {cloud: 0}})]);
+  const light = overlay.scenes[0]; overlay.drawClouds(light, 0); const alpha = env.context.globalAlpha;
+  conn.callback([config({effect: 'clouds', intensity: {cloud: 1}})]);
+  const heavy = overlay.scenes[0]; overlay.drawClouds(heavy, 0);
+  assert.ok(heavy.clouds.length > light.clouds.length);
+  assert.equal(light.cloudSprite, 'cloud'); assert.equal(heavy.cloudSprite, 'darkCloud');
+  assert.ok(env.context.globalAlpha > alpha);
+  conn.callback([config({effect: 'storm', speed: 2, wind: 1, intensity: {rain: 0, wind: 0}})]);
+  const counts = ['rain', 'wind'].map(key => overlay.scenes[0][key].length);
+  const advance = () => {
+    const scene = overlay.scenes[0];
+    for (const key of ['rain', 'wind']) Object.assign(scene[key][0], {x: 300, y: 100, depth: 0.5});
+    overlay.drawRain(scene, 0.1); overlay.drawWind(scene, 0.1);
+    return ['rain', 'wind'].map(key => [scene[key][0].x, scene[key][0].y]);
+  };
+  const movement = advance();
+  conn.callback([config({effect: 'storm', speed: 2, wind: 1, intensity: {rain: 1, wind: 1}})]);
+  assert.deepEqual(['rain', 'wind'].map(key => overlay.scenes[0][key].length), counts);
+  assert.deepEqual(advance(), movement);
+  overlay.stop();
+});
+
+test('lightning obeys opt-in, global intervals, motion override, navigation, visibility and stop', async () => {
+  const env = mockEnvironment(), conn = env.connection(); env.doc.root = {hass: {connection: conn}};
+  const overlay = new WeatherEffectsOverlay(env.win, env.doc).start(); await flush();
+  let time = 0;
+  for (const effect of Object.keys(EFFECTS)) {
+    conn.callback([config({effect, lightning_enabled: true})]);
+    env.tick(time += 13000);
+    assert.equal(Boolean(overlay.lightning.flash), ['storm', 'storm_clouds'].includes(effect), effect);
+  }
+  const storms = Array.from({length: 32}, (_, id) => config({id, effect: 'storm', density: 200,
+    lightning_enabled: true, lightning_interval: 5, lightning_brightness: 0.25, respect_reduced_motion: false}));
+  conn.callback(storms); env.tick(time += 5000);
+  assert.ok(overlay.lightning.flash);
+  assert.ok(overlay.scenes.reduce((sum, s) => sum + scenePrimitiveCount(s), 1) <= MAX_PARTICLES);
+  const serial = overlay.lightning.serial, allocations = env.canvases.length, bolt = overlay.bolt;
+  const due = overlay.lightning.nextAt;
+  conn.callback(storms.map(c => ({...c, id: 'metadata-' + c.id})));
+  assert.equal(overlay.lightning.nextAt, due);
+  conn.callback(storms.map(c => ({...c, size: 2})));
+  assert.equal(overlay.lightning.nextAt, due, 'visual rebuild cannot reset cooldown');
+  env.tick(time += 250); assert.equal(overlay.lightning.flash, null);
+  env.tick(due - 1); assert.equal(overlay.lightning.serial, serial);
+  env.context.fillRects.length = 0;
+  env.tick(time = due + 50);
+  assert.equal(overlay.lightning.serial, serial + 1);
+  assert.equal(env.context.fillRects.length, 1, 'only one wash across 32 profiles');
+  assert.equal(env.canvases.length, allocations); assert.equal(overlay.bolt, bolt);
+  const clear = env.context.clearCount;
+  env.motion.matches = true; env.motion.dispatch('change');
+  assert.equal(overlay.lightning.flash, null); assert.ok(env.context.clearCount > clear);
+  assert.equal(env.raf.size, 1, 'motion override still permits ordinary weather, never lightning');
+  env.tick(time += 20000); assert.equal(overlay.lightning.flash, null);
+  env.motion.matches = false; env.motion.dispatch('change');
+  assert.equal(overlay.lightning.nextAt, time + 5000);
+  env.tick(time += 5000); assert.ok(overlay.lightning.flash);
+  conn.callback(storms.map(c => ({...c, lightning_enabled: false})));
+  assert.equal(overlay.lightning.flash, null, 'toggle off is synchronous');
+  conn.callback(storms);
+  for (const state of ['hidden', 'route']) {
+    env.tick(time += 5000); assert.ok(overlay.lightning.flash);
+    if (state === 'hidden') { env.doc.hidden = true; env.doc.dispatch('visibilitychange'); }
+    else { env.win.location.pathname = '/config'; env.win.dispatch('location-changed'); }
+    assert.equal(overlay.lightning.flash, null); assert.equal(env.raf.size, 0);
+    env.tick(time += 10000);
+    if (state === 'hidden') { env.doc.hidden = false; env.doc.dispatch('visibilitychange'); }
+    else { env.win.location.pathname = '/lovelace'; env.win.dispatch('location-changed'); }
+    assert.equal(overlay.lightning.nextAt, time + 5000);
+    env.tick(time += 100); assert.equal(overlay.lightning.flash, null);
+    env.tick(time += 4900); assert.ok(overlay.lightning.flash);
+    // End each round without an active pulse, while retaining the cooldown.
+    env.tick(time += 250);
+  }
+  overlay.stop(); assert.equal(overlay.lightning.flash, null);
+  assert.equal(overlay.stepLightning(time + 100000), null);
+});
+
+test('heat, lightning bolt and wash share the global cap and bounded reusable raster cache', async () => {
+  const env = mockEnvironment(), conn = env.connection(); env.doc.root = {hass: {connection: conn}};
+  const overlay = new WeatherEffectsOverlay(env.win, env.doc).start(); await flush();
+  conn.callback(Array.from({length: 32}, (_, id) => config({id, effect: id % 2 ? 'partlycloudy' : 'storm',
+    density: 200, intensity: {heat: 1, cloud: 1}, lightning_enabled: true, lightning_interval: 5,
+    lightning_brightness: 0.25})));
+  assert.ok(overlay.scenes.some(scene => scene.heat.length));
+  assert.ok(overlay.scenes.reduce((sum, scene) => sum + scenePrimitiveCount(scene), 2) <= MAX_PARTICLES);
+  const allocations = env.canvases.length, bolt = overlay.bolt;
+  env.context.fillAlphas.length = 0;
+  overlay.drawLightning(5000); assert.equal(env.context.fillAlphas.at(-1), 0.25);
+  overlay.drawLightning(5110); assert.equal(env.context.fillAlphas.at(-1), 0.0625);
+  const paints = env.context.fillAlphas.length;
+  overlay.drawLightning(5220); assert.equal(env.context.fillAlphas.length, paints);
+  for (let time = 5300; time < 10000; time += 100) env.tick(time);
+  assert.equal(env.canvases.length, allocations); assert.equal(overlay.bolt, bolt);
+  assert.ok(overlay.sprites.size <= 13);
+  overlay.stop();
+});
 
 test('cloud sprites use closed lobed silhouettes, distinct variants and stronger adjustable contrast', () => {
   const paths = [0, 1].map(variant => {

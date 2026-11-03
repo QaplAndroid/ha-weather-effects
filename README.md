@@ -2,7 +2,7 @@
 
 Snijeg, kiša, sunce i oblaci kao animirani sloj preko **odabranih dashboarda**. Vlastita integracija (custom component), nije Supervisor add-on. Bez HTML kartice, card_mod-a, Lovelace resursa i ručnog uređivanja dashboard YAML-a.
 
-**Verzija 0.3.1 — jasnije oblikovani i vidljiviji oblaci, uz maglu, vjetar i ostala vremenska stanja.** Kod i simulacije provjereni su lokalno; nije pokrenut stvarni Home Assistant niti provjerena instalacija na tvojoj instanci. Ciljane API mogućnosti: HA 2025.6+ (`async_register_static_paths`, options flow, `weather.get_forecasts`). Kompatibilnost svake HA verzije nije potvrđena.
+**Verzija 0.4.0 — zasebne postavke svakog efekta, prilagodba vremenskim podacima, vrućina i neobavezne munje.** Kod i simulacije provjereni su lokalno; nije pokrenut stvarni Home Assistant niti provjerena instalacija na tvojoj instanci. Ciljane API mogućnosti: HA 2025.6+ (`async_register_static_paths`, options flow, `weather.get_forecasts`). Kompatibilnost svake HA verzije nije potvrđena.
 
 ## Instalacija kroz HACS (custom repository)
 
@@ -19,7 +19,7 @@ HACS instalaciju također treba potvrditi na stvarnoj instanci; lokalni testovi 
 
 ## Ručna instalacija (alternativa)
 
-1. Preuzmi `weather-effects-0.3.1.zip` sa stranice [Releases](https://github.com/QaplAndroid/ha-weather-effects/releases) i raspakiraj ga na računalu.
+1. Preuzmi `weather-effects-0.4.0.zip` sa stranice [Releases](https://github.com/QaplAndroid/ha-weather-effects/releases) i raspakiraj ga na računalu.
 2. Kopiraj njegovu mapu `custom_components/weather_effects` u HA konfiguracijsku mapu, tako da dobiješ `/config/custom_components/weather_effects/manifest.json`. Ako `custom_components` već postoji, kopiraj samo podmapu `weather_effects` u njega. Nemoj prepisivati druge integracije.
    - Koristi npr. Samba share ili Studio Code Server. Konfiguracijska mapa je ista ona u kojoj se nalazi `configuration.yaml`; na Container/Core instalaciji može biti na drugoj host putanji.
 3. **Ponovno pokreni Home Assistant**, ne samo ponovno učitaj YAML.
@@ -28,15 +28,15 @@ HACS instalaciju također treba potvrditi na stvarnoj instanci; lokalni testovi 
 6. Osvježi preglednik. U Companion aplikaciji po potrebi potpuno zatvori i ponovno otvori prikaz ili očisti frontend cache. Integracija sama registrira JS modul; nemoj ga dodatno dodavati među dashboard resurse.
 7. Kad potvrdiš da nova integracija radi, ukloni staru conditional/html-card karticu s pahuljicama da se efekti ne udvostručuju. `html-card`/`card_mod` ne moraš uklanjati ako ih koristiš drugdje.
 
-Nakon instalacije sve je podesivo kroz **Weather Effects → Konfiguriraj**. Promjene se šalju otvorenim preglednicima bez ponovnog pokretanja HA-a.
+Opće postavke su u **Weather Effects → Konfiguriraj**, a zasebne postavke svakog efekta uređuju se kontrolnom karticom ili standardnim HA entitetima. Promjene se šalju otvorenim preglednicima bez ponovnog pokretanja HA-a.
 
 ## Kontrolni dashboard bez YAML-a (novo u 0.2.0)
 
 Integracija sada daje **Weather Effects Control Card** koja se može dodati kroz standardni vizualni odabir kartica. Ne stvara i ne mijenja dashboarde automatski te ne dira tvoje postojeće kartice.
 
-### Ako već imaš 0.1.0 ili 0.2.0
+### Ako već imaš raniju verziju
 
-U HACS-u ažuriraj **Weather Effects** na 0.3.1 (po potrebi provjeri nova izdanja ili ponovno preuzmi), restartaj HA i potpuno osvježi preglednik. Ne trebaš brisati integraciju ni ponovno stvarati profil. Novi `switch`, `select` i `number` entiteti dodaju se pri pokretanju. Kod ručne instalacije zamijeni mapu integracije sadržajem novog ZIP-a.
+U HACS-u ažuriraj **Weather Effects** na 0.4.0 (po potrebi provjeri nova izdanja ili ponovno preuzmi), restartaj HA i potpuno osvježi preglednik. Ne trebaš brisati integraciju ni ponovno stvarati profil. Novi `switch`, `select` i `number` entiteti dodaju se pri pokretanju. Kod ručne instalacije zamijeni mapu integracije sadržajem novog ZIP-a.
 
 ### Dodavanje posebnog dashboarda
 
@@ -51,7 +51,9 @@ Kartica također može stajati na bilo kojem postojećem dashboardu; ne mora bit
 ### Što se podešava na kartici
 
 - Uključeno/isključeno, ručni/automatski način i ručni efekt.
-- Brzina, veličina, gustoća, neprozirnost i vjetar.
+- **Uredi postavke za efekt**: zasebna brzina, veličina, gustoća, neprozirnost i vjetar za odabrani efekt.
+- Prilagodba vremenskim podacima i prag prikaza vrućine.
+- Izričito uključivanje bljeskova munja, razmak i jačina uz upozorenje.
 - Pomak satne prognoze, najviše FPS i poštivanje smanjenog kretanja.
 - Status trenutačno odabranog efekta, vremenski entitet, izvor podataka i vrijeme odabrane prognoze.
 
@@ -63,11 +65,62 @@ Ako je glavni prekidač uključen, a `input_boolean.christmasmode` isključen, e
 
 ### Standardni HA entiteti i vlastiti raspored
 
-Na uređaju profila pronaći ćeš dva `switch` entiteta (uključivanje i smanjeno kretanje), dva `select` entiteta (način i efekt), sedam `number` entiteta (pomak, brzina, veličina, gustoća, neprozirnost, vjetar, FPS) te postojeći statusni senzor. HA dodjeljuje ID-eve; kartica ih pronalazi preko registra, pa radi i nakon preimenovanja.
+Na uređaju profila pronaći ćeš četiri `switch` entiteta (uključivanje, smanjeno kretanje, prilagodba vremenu i munje), tri `select` entiteta (način, ručni efekt i cilj uređivanja), deset `number` entiteta (pet za izgled, pomak, FPS, prag vrućine, razmak i svjetlina munje) te postojeći statusni senzor. HA dodjeljuje ID-eve; kartica ih pronalazi preko registra, pa radi i nakon preimenovanja.
 
 Ako želiš vlastiti raspored, dodaj te entitete kroz standardnu HA **Entities** ili **Tile** karticu. Mogu se koristiti i u automatizacijama. Kontrolna kartica koristi standardne `switch`, `select` i `number` akcije, s redovnim HA dozvolama korisnika.
 
 Ako kartice nema u pretrazi, prvo provjeri da je integracija učitana, restartaj HA i potpuno osvježi/ponovno otvori klijent. Prikaz, editor i HACS ažuriranje još treba potvrditi na stvarnoj HA instanci.
+
+## Zasebne postavke svakog efekta (novo u 0.4.0)
+
+1. Na kartici pod **Uredi postavke za efekt** odaberi npr. **Snijeg**.
+2. Podesi pet klizača. Vrijednosti se spremaju odmah po završetku pomicanja.
+3. Odaberi **Kiša** i postavi drukčiju brzinu, gustoću itd. Povratak na Snijeg vraća njegove vrijednosti.
+
+Automatski `rainy` koristi **Kiša i oblaci**, a `pouring` **Pljusak**: za taj prikaz uredi baš taj izbor, ne zasebni efekt Kiša bez oblaka.
+
+Cilj uređivanja nije isto što i trenutačno prikazani efekt. U automatskom načinu možeš urediti Snijeg dok je trenutačno sunčano, bez promjene vremena na zaslonu. Ručni odabir efekta također odabire njegov profil uređivanja; promjena samo cilja uređivanja ne mijenja prikazani efekt.
+
+Stare spremljene vrijednosti se ne brišu: služe kao početne vrijednosti za efekte/parametre bez vlastite postavke. U općoj formi **Konfiguriraj** pet starih klizača i dalje predstavlja te naslijeđene početne vrijednosti, ne uređuje odabrani posebni profil. Spremanje opće forme ne briše zasebne postavke efekata. Sve ostaje spremljeno nakon restarta.
+
+Kartica odvojeno prikazuje spremljenu osnovu i trenutačno primijenjene vrijednosti. Automatska prilagodba nikad ne prepisuje spremljene profile.
+
+**Više klijenata i automatizacije:** nativni cilj uređivanja je zajednički za cijeli profil, nije zaseban po pregledniku. Prvo postavi `select` cilja, zatim odgovarajući `number`. Kartica odbija završetak povlačenja ako je u međuvremenu primijetila promjenu cilja s drugog klijenta. To je provjera prije slanja, ne atomska transakcija između više HA servisnih poziva; izbjegni paralelno uređivanje istog profila iz više klijenata/automatizacija.
+
+## Prilagodba intenziteta vremenu
+
+U **automatskom načinu**, uz uključeno **Prilagodi intenzitet vremenu**, spremljena osnova se privremeno prilagođava dostupnim podacima:
+
+| Podatak | Vizualni rezultat |
+| --- | --- |
+| Temperatura iznad praga (zadano 30 °C) uz sunčani efekt | Topliji/narančasti sjaj sunca i blage uzlazne linije vrućine |
+| Veći postotak naoblake | Više oblaka; od 65% tamnija paleta |
+| Veća oborina po satu | Gušća/brža oborina, uz ograničene multiplikatore |
+| Jači vjetar | Jače zanošenje i kod vjetrovitog efekta nešto brže strujnice |
+
+Prag vrućine podesiv je 25–45 °C. Puna vrućina postiže se na pragu +12 °C (npr. 42 °C za prag 30). Naoblaka je normalizirana 0–100%; multiplikator broja oblaka ide od 0,35 do 2. Oborinski intenzitet doseže maksimum na 12 mm/h; gustoća se množi s 0,45–2,55, brzina s 0,75–1,55 i neprozirnost s 0,8–1. Intenzitet vjetra raste od 8 do 70 km/h; znak spremljenog vjetra bira smjer, ne koristi se stvarni meteorološki smjer. Svi rezultati ostaju unutar granica kontrola i ukupnog ograničenja čestica.
+
+Ako neki podatak nedostaje, **ne nagađa se**: zadržava se spremljena postavka tog parametra. Ručni način i isključena prilagodba koriste spremljene vrijednosti bez ovih multiplikatora.
+
+### Izvori, jedinice i prognoza
+
+- Temperatura se pretvara iz °C/°F/K; vjetar iz km/h, m/s, mph ili čvorova. Nepoznate jedinice i nevaljane/neograničene vrijednosti se ignoriraju.
+- Trenutačna temperatura, naoblaka i vjetar čitaju se iz trenutačnih atributa weather entiteta.
+- Trenutačna oborina koristi **izričitu stopu** `precipitation_rate` i jedinicu mm/h ili in/h. Generički `precipitation` može biti dnevni akumulirani iznos pa se ne tumači kao trenutačna jačina.
+- Ako stopa nedostaje, prilagodba može dohvatiti satnu prognozu i uzeti najbližu točku unutar 90 minuta, čak i pri pomaku 0 h. Satna količina mm/in tretira se kao procjena po satu. To je **prognozna procjena, ne mjerenje kiše kod kuće**; kartica prikazuje izvor `hourly_forecast` odnosno „Procjena satne prognoze”.
+- Za pozitivni pomak koriste se mjerenja **odabrane buduće točke**, nikad današnja temperatura/naoblaka/vjetar kao zamjena za nedostajuće buduće vrijednosti. Iz trenutačnog entiteta preuzimaju se samo metapodaci o jedinicama.
+- Cache i povratak na trenutačno stanje ostaju kao prije. Ručni način i isključeni glavni/uvjetni prekidač ne pokreću nove zahtjeve prognoze. Dostupnost pojedinih atributa ovisi o pružatelju; Met.no ne mora pružati svaki podatak.
+
+## Munje i bljeskovi — upozorenje
+
+**Bljeskovi mogu izazvati napadaje ili nelagodu kod fotosenzitivnih osoba.** Munje su zadano **isključene**, uključuju se izričito zasebnim prekidačem. Uključi ih samo uzimajući u obzir sve gledatelje i uređaje odabranih dashboarda. Nijedno ograničenje ne jamči sigurnost za osjetljive osobe.
+
+- Rade samo za **Grmljavinsko nevrijeme** i **Olujne oblake**, u ručnom ili automatskom načinu.
+- Jedna kratka munja i blagi svjetlosni puls (220 ms), bez dvostrukih/trostrukih nizova. Prvi se čeka cijeli razmak.
+- Razmak je 5–60 s, zadano 12 s; najviše jedan bljesak po razmaku **ukupno kroz sve aktivne profile u jednom pregledniku**. Ako se preklapa više profila s uključenim munjama, bira se najkraći njihov razmak i najniža njihova svjetlina.
+- Neprozirnost svjetlosnog pulsa je 0,05–0,25, zadano 0,10. Sama linija munje može biti vidljivija.
+- Postavka uređaja **smanjeno kretanje uvijek gasi munje**, čak i ako je opće poštivanje smanjenog kretanja isključeno.
+- Ne rade u skrivenoj kartici, izvan odabranog dashboarda ili kad je efekt isključen. Nakon povratka čeka se novi razmak, nema trenutnog bljeska.
 
 ## Preporučene prve postavke
 
@@ -79,6 +132,8 @@ Ako kartice nema u pretrazi, prvo provjeri da je integracija učitana, restartaj
 - **Neobavezni prekidač:** ostavi prazno za početak. Za postojeće ponašanje odaberi `input_boolean.christmasmode`; tada efekti rade samo kad je on uključen. To je glavni uvjet i u automatskom načinu, ne posebna božićna prečica.
 - **Pomak:** 0 h za trenutačno stanje, npr. 3 h za prognozu.
 - Brzina 1, veličina 1, gustoća 60, neprozirnost 0,65, vjetar 0,2, 30 FPS.
+- **Prilagodi intenzitet vremenu:** zadano uključeno, primjenjuje se samo automatski. Isključi za točno spremljeni izgled bez vremenskih multiplikatora.
+- **Munje:** zadano isključene; preporuka da tako ostanu dok ne pročitaš upozorenje i uzmeš u obzir sve gledatelje.
 
 ### Dashboardi
 
@@ -90,7 +145,7 @@ Moguće je dodati više instanci integracije za zasebne postavke različitih das
 
 ## Ručno i automatski
 
-Ručno je dostupno **18 izbora**: Isključeno, Snijeg, Kiša, Sunce, Oblaci, Sunce i oblaci, Kiša i oblaci, Snijeg i oblaci, Magla, Vjetar, Vjetar i oblaci, Vedra noć, Mjesec i oblaci, Tuča, Susnježica, Pljusak, Grmljavinsko nevrijeme (bez bljeskanja), Olujni oblaci. Stari spremljeni izbori ostaju valjani.
+Ručno je dostupno **18 izbora**: Isključeno, Snijeg, Kiša, Sunce, Oblaci, Sunce i oblaci, Kiša i oblaci, Snijeg i oblaci, Magla, Vjetar, Vjetar i oblaci, Vedra noć, Mjesec i oblaci, Tuča, Susnježica, Pljusak, Grmljavinsko nevrijeme, Olujni oblaci. Stari spremljeni izbori ostaju valjani.
 
 Automatski:
 
@@ -103,8 +158,8 @@ Automatski:
 | fog | Niski, prozirni slojevi magle |
 | rainy | Kiša i oblaci |
 | pouring | Gušći i brži pljusak s oblacima |
-| lightning-rainy | Olujni oblaci, vjetar i kiša, bez bljeskova |
-| lightning | Olujni oblaci i vjetar, bez bljeskova |
+| lightning-rainy | Olujni oblaci, vjetar i kiša; munje samo uz izričit uključeni prekidač |
+| lightning | Olujni oblaci i vjetar; munje samo uz izričit uključeni prekidač |
 | snowy | Pahuljice s oblacima |
 | snowy-rainy | Susnježica: zasebne čestice kiše i snijega |
 | hail | Male ledene kuglice s oblacima |
@@ -112,7 +167,7 @@ Automatski:
 | windy-variant | Vjetar i oblaci |
 | exceptional, nepoznato stanje | Bez efekta; ne nagađa se opasno vrijeme |
 
-Obuhvaćena su sva standardna HA vremenska stanja. Ovo su **dekorativni, stilizirani efekti**, ne meteorološka simulacija ili sigurnosni sustav. Mjesec ne predstavlja stvarnu fazu, a vjetar nije fizički izračunat iz prognozirane brzine/smjera; koristi podesivi klizač vjetra. Za grmljavinu namjerno nema bljeskova ni zatamnjenja cijelog zaslona.
+Obuhvaćena su sva standardna HA vremenska stanja. Ovo su **dekorativni, stilizirani efekti**, ne meteorološka simulacija ili sigurnosni sustav. Mjesec ne predstavlja stvarnu fazu. Vremenska prilagodba koristi dostupne brojčane podatke i ograničene vizualne multiplikatore, ne fizikalnu simulaciju. Neobavezne munje imaju poseban upozoreni prekidač; nisu uključene samim odabirom grmljavine.
 
 Trenutačni `sun.sun`, ako postoji, služi za razlikovanje dana/noći kod trenutačnog stanja. Buduća prognoza koristi vlastiti `is_daytime` ako ga pružatelj daje, nikad današnje stanje sunca za budući sat. Bez takvog podatka zadržava se simbol koji je dao pružatelj.
 
@@ -138,7 +193,7 @@ Trenutačni `sun.sun`, ako postoji, služi za razlikovanje dana/noći kod trenut
 
 Integracija stvara dijagnostički senzor **Effect** pod svojim uređajem. ID određuje HA; pogledaj ga na stranici uređaja. Vrijednost je efekt koji integracija šalje preglednicima (ne potvrda da je trenutno vidljiv na ovom uređaju).
 
-Atributi: `status` (`ok`, `forecast_fallback`, `weather_unavailable`, `enable_entity_unavailable`), `source` (`manual`, `current`, `forecast`, `fallback_current`), `forecast_time`, `condition`, odabrani dashboardi i vremenski entitet.
+Atributi: `status` (`ok`, `forecast_fallback`, `weather_unavailable`, `enable_entity_unavailable`), `source` (`manual`, `current`, `forecast`, `fallback_current`), `forecast_time`, `condition`, odabrani dashboardi i vremenski entitet. Od 0.4.0 tu su i `settings_effect`, `preset`, `intensity`, `weather_metrics` te postavke prilagodbe i munja. `preset` je osnova stvarno odabranog efekta, ne nužno efekta koji trenutno uređuješ.
 
 Ako se ništa ne vidi:
 
@@ -173,7 +228,9 @@ python scripts/build_release.py
 
 Iz korijena repozitorija možeš pokrenuti `python -m http.server 8000 --bind 127.0.0.1` i u pregledniku otvoriti `http://127.0.0.1:8000/demo/`. Demo prikazuje stvarni canvas renderer preko **statičnih oglednih kartica**, ne tvoj Home Assistant i ne stvarne podatke doma. Nema prijave, tokena ni vanjskih servisa. Poslužitelj zaustavi s Ctrl+C.
 
-Ako imaš Chrome, Edge ili Chromium, opcionalni `node scripts/browser_smoke.mjs` provjerava svih 18 efekata u stvarnom headless pregledniku, prozirnost za klikove, mobilnu rezoluciju i smanjeno kretanje. Koristi novi privremeni profil, nikad postojeći korisnički profil. Put do preglednika možeš zadati varijablom `WEATHER_EFFECTS_BROWSER`. Slike i izvještaj spremaju se u `dist/visual-preview`; to nije test Home Assistant instalacije.
+Demo kontrolne kartice je na `http://127.0.0.1:8000/demo/controls.html`; koristi izmišljeni profil i memorijske servise, ne stvarne HA postavke.
+
+Ako imaš Chrome, Edge ili Chromium, opcionalni `node scripts/browser_smoke.mjs` provjerava svih 18 efekata u stvarnom headless pregledniku, prozirnost za klikove, mobilnu rezoluciju, vrućinu i naoblaku, izričito uključivanje/razmak munja, smanjeno kretanje i promjenu dashboarda. Testira i stvarnu karticu u pregledniku: zasebne spremljene postavke kroz testne servise i upozoreno uključivanje munja. Za provjeru razmaka munja koristi determinističko pomicanje testnog sata; ne čeka svaki stvarni razmak. Koristi novi privremeni profil, nikad postojeći korisnički profil. Put do preglednika možeš zadati varijablom `WEATHER_EFFECTS_BROWSER`. Slike i izvještaj spremaju se u `dist/visual-preview`; to nije test Home Assistant instalacije.
 
 Python testovi vremenske logike koriste stvarne datetime vrijednosti, a testovi koordinatora koriste izričite HA simulacije. JS testovi koriste simulirani DOM/canvas/vezu. Ovo **nije** zamjena za test instalacije i prikaza na HA-u.
 

@@ -1,7 +1,8 @@
 """Shared native control identity and configured (not weather-resolved) state."""
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DEFAULTS, DOMAIN
+from .const import DOMAIN
+from .presets import configured_control_value, configured_settings
 
 
 class WeatherEffectsControl(CoordinatorEntity):
@@ -25,4 +26,4 @@ class WeatherEffectsControl(CoordinatorEntity):
     @property
     def configured_value(self):
         """Read persisted options even before the scheduled listener runs."""
-        return (self.entry.options or self.entry.data).get(self.key, DEFAULTS[self.key])
+        return configured_control_value(configured_settings(self.entry), self.key)

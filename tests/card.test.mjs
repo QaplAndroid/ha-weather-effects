@@ -33,10 +33,10 @@ function dom() {
 function fixture() {
   dom();
   const states = {}, controls = {};
-  for (const key of ['enabled', 'respect_reduced_motion', 'mode', 'effect', 'forecast_offset', 'speed', 'size', 'density', 'opacity', 'wind', 'max_fps', 'status']) {
-    const domain = ['enabled', 'respect_reduced_motion'].includes(key) ? 'switch' : ['mode', 'effect'].includes(key) ? 'select' : key === 'status' ? 'sensor' : 'number';
+  for (const key of ['enabled', 'respect_reduced_motion', 'adaptive_weather', 'lightning_enabled', 'mode', 'effect', 'settings_effect', 'forecast_offset', 'speed', 'size', 'density', 'opacity', 'wind', 'max_fps', 'heat_threshold', 'lightning_interval', 'lightning_brightness', 'status']) {
+    const domain = ['enabled', 'respect_reduced_motion', 'adaptive_weather', 'lightning_enabled'].includes(key) ? 'switch' : ['mode', 'effect', 'settings_effect'].includes(key) ? 'select' : key === 'status' ? 'sensor' : 'number';
     const id = `${domain}.${key}`; controls[key] = id;
-    states[id] = { state: domain === 'switch' ? 'on' : key === 'mode' ? 'manual' : key === 'effect' ? 'rain' : key === 'status' ? 'active' : '1', attributes: { options: key === 'mode' ? ['automatic', 'manual'] : ['off', 'rain', 'snow'], min: 0, max: 100, step: 0.1 } };
+    states[id] = { state: domain === 'switch' ? key === 'lightning_enabled' ? 'off' : 'on' : key === 'mode' ? 'manual' : ['effect', 'settings_effect'].includes(key) ? 'rain' : key === 'status' ? 'active' : '1', attributes: { options: key === 'mode' ? ['automatic', 'manual'] : ['off', 'rain', 'snow'], min: 0, max: 100, step: 0.1 } };
   }
   const calls = [];
   const connection = { connected: true, calls: 0, cleanups: 0,
@@ -186,6 +186,87 @@ test('all effect options have HR/EN labels and can be selected through native co
     await card.commit('effect', effect);
     assert.equal(calls.at(-1)[2].option, effect);
   }
+});
+
+test('settings target remains editable in automatic mode, distinct from runtime and saved base', async () => {
+  const { card, hass, profile, calls } = fixture();
+  hass.states['select.mode'].state = 'automatic'; hass.states['select.settings_effect'].state = 'snow';
+  hass.states['number.speed'].state = '2.2';
+  Object.assign(profile, { effect: 'rain', settings_effect: 'snow', speed: 2.8, preset: { speed: 1.3 }, intensity: { heat: 0, cloud: 0.4, rain: 0.75, wind: null }, weather_metrics: { temperature_c: 12, cloud_coverage: 40, precipitation_mm_h: 3.4, wind_kmh: 21, precipitation_source: 'forecast_hourly_amount' } });
+  card.hass = hass;
+  assert.equal(control(card, 'effect').disabled, true);
+  assert.equal(control(card, 'settings_effect').disabled, false);
+  assert.equal(control(card, 'speed').value, '2.2');
+  assert.match(text(card), /Currently displayed effect/); assert.match(text(card), /Edit settings for effect/);
+  assert.match(text(card), /Actual runtime values/); assert.match(text(card), /Saved base for displayed effect/);
+  for (const value of ['2.8', '1.3', '75%', 'Temperature (°C)', 'Cloud coverage (%)', 'Precipitation (mm/h)', 'Wind (km/h)', 'Hourly forecast amount']) assert.ok(text(card).includes(value), value);
+  await card.commit('settings_effect', 'snow'); await card.commit('speed', 2.4); await card.commit('effect', 'snow');
+  assert.deepEqual(calls, [['select', 'select_option', { entity_id: 'select.settings_effect', option: 'snow' }], ['number', 'set_value', { entity_id: 'number.speed', value: 2.4 }]]);
+  await card.commit('settings_effect', 'not-an-effect'); assert.equal(calls.length, 2);
+});
+
+test('adaptive and lightning controls use standard services with hard safety bounds and persistent warning', async () => {
+  const { card, calls } = fixture();
+  assert.equal(control(card, 'lightning_enabled').checked, false);
+  assert.equal(control(card, 'lightning_interval').min, '5');
+  assert.equal(control(card, 'lightning_brightness').max, '0.25');
+  assert.match(text(card), /Photosensitivity warning/); assert.match(text(card), /Disabled by default/);
+  assert.match(control(card, 'lightning_enabled').attributes['aria-label'], /opt in/);
+  assert.match(control(card, 'lightning_enabled').attributes['aria-describedby'], /lightning-warning/);
+  await card.commit('adaptive_weather', false); await card.commit('lightning_enabled', true);
+  await card.commit('heat_threshold', 32); await card.commit('lightning_interval', 12); await card.commit('lightning_brightness', 0.15);
+  await card.commit('lightning_interval', 4); await card.commit('lightning_brightness', 0.3);
+  assert.deepEqual(calls, [
+    ['switch', 'turn_off', { entity_id: 'switch.adaptive_weather' }], ['switch', 'turn_on', { entity_id: 'switch.lightning_enabled' }],
+    ['number', 'set_value', { entity_id: 'number.heat_threshold', value: 32 }], ['number', 'set_value', { entity_id: 'number.lightning_interval', value: 12 }], ['number', 'set_value', { entity_id: 'number.lightning_brightness', value: 0.15 }],
+  ]);
+  assert.match(text(card), /Photosensitivity warning/);
+});
+
+test('legacy profiles explain disabled new controls and never conflate saved preset with effective runtime', async () => {
+  const { card, profile, calls } = fixture();
+  for (const key of ['settings_effect', 'adaptive_weather', 'lightning_enabled', 'heat_threshold', 'lightning_interval', 'lightning_brightness']) delete profile.controls[key];
+  card.render();
+  for (const key of ['settings_effect', 'adaptive_weather', 'lightning_enabled', 'speed']) assert.equal(control(card, key).disabled, true);
+  assert.match(text(card), /missing or disabled/); assert.match(text(card), /safely edit saved appearance/); assert.match(text(card), /Photosensitivity warning/);
+  await card.commit('speed', 2); await card.commit('lightning_enabled', true); assert.equal(calls.length, 0);
+  delete profile.controls; card.hass = { language: 'hr' };
+  assert.match(text(card), /fotoosjetljivost/); assert.equal(control(card, 'settings_effect').disabled, true);
+});
+
+test('registry IDs route native services without becoming user-facing control labels', async () => {
+  const { card, profile, hass, calls } = fixture();
+  for (const [key, id] of [['settings_effect', 'select.living_room_effect_settings_2'], ['adaptive_weather', 'switch.living_room_adaptive_2'], ['lightning_brightness', 'number.living_room_flashes_2']]) {
+    hass.states[id] = hass.states[profile.controls[key]]; delete hass.states[profile.controls[key]]; profile.controls[key] = id;
+  }
+  card.hass = hass;
+  assert.equal(control(card, 'settings_effect').attributes['aria-label'], 'Edit settings for effect');
+  assert.equal(control(card, 'adaptive_weather').attributes['aria-label'], 'Adapt intensity to weather');
+  assert.doesNotMatch(text(card), /living_room/);
+  await card.commit('settings_effect', 'snow'); await card.commit('adaptive_weather', true); await card.commit('lightning_brightness', 0.1);
+  assert.deepEqual(calls.map(call => call[2].entity_id), ['select.living_room_effect_settings_2', 'switch.living_room_adaptive_2', 'number.living_room_flashes_2']);
+});
+
+test('range focus and drag survive hass updates without writes until change', async () => {
+  const { card, hass, calls } = fixture(); const range = control(card, 'density');
+  range.fire('focus'); card.hass = { ...hass }; assert.equal(control(card, 'density'), range);
+  range.value = '35'; range.fire('input'); card.hass = { ...hass }; assert.equal(control(card, 'density'), range); assert.equal(calls.length, 0);
+  range.fire('change'); await flush(); assert.equal(calls[0][2].value, 35);
+});
+
+test('stale preset slider refuses writes when another client changes the shared edit target', async () => {
+  const { card, hass, calls } = fixture();
+  const range = control(card, 'speed'); range.fire('focus'); range.value = '2.1'; range.fire('input');
+  hass.states['select.settings_effect'].state = 'snow'; card.hass = { ...hass };
+  assert.equal(control(card, 'speed'), range, 'in-progress edit remains visible until commit');
+  range.fire('change'); await flush();
+  assert.equal(calls.length, 0); assert.match(text(card), /changed in another control/); assert.match(text(card), /No preset was saved/);
+  assert.equal(control(card, 'settings_effect').value, 'snow');
+  const fresh = control(card, 'speed'); fresh.value = '1.7'; fresh.fire('change'); await flush();
+  assert.equal(calls.length, 1); assert.equal(calls[0][2].value, 1.7);
+  hass.language = 'hr'; card.hass = { ...hass };
+  const hrRange = control(card, 'speed'); hrRange.fire('focus'); hass.states['select.settings_effect'].state = 'rain'; card.hass = { ...hass };
+  hrRange.fire('change'); await flush(); assert.equal(calls.length, 1); assert.match(text(card), /Postavka nije spremljena/);
 });
 
 test.after(() => { for (const [key, value] of Object.entries(globals)) { if (value === undefined) delete globalThis[key]; else globalThis[key] = value; } });

@@ -97,7 +97,7 @@ def load_backend():
         Required=MockedMarker, Optional=MockedMarker, Schema=lambda fields: fields))
     loaded = {}
     with patch.dict(sys.modules, stubs):
-        for name in ("const", "logic", "coordinator", "config_flow"):
+        for name in ("const", "logic", "presets", "intensity", "coordinator", "config_flow"):
             full_name = PACKAGE + "." + name
             spec = importlib.util.spec_from_file_location(full_name, BACKEND / (name + ".py"))
             value = importlib.util.module_from_spec(spec)
@@ -261,7 +261,7 @@ class CoordinatorTests(unittest.IsolatedAsyncioTestCase):
         self.coordinator.settings.update(mode="manual", effect="rain")
         result = await self.update()
         self.assertEqual((result["source"], result["effect"]), ("manual", "rain"))
-        self.coordinator.settings.update(mode="automatic", forecast_offset=0)
+        self.coordinator.settings.update(mode="automatic", forecast_offset=0, adaptive_weather=False)
         self.entities["sun.sun"] = state("below_horizon")
         result = await self.update()
         self.assertEqual((result["source"], result["effect"]), ("current", "night"))
@@ -392,6 +392,7 @@ class CoordinatorTests(unittest.IsolatedAsyncioTestCase):
     async def test_state_binding_refresh_and_stop(self):
         unsubscribe = Mock()
         self.coordinator.settings["enable_entity"] = "switch.effects"
+        self.entities["switch.effects"] = state("on")
         with patch.object(backend.coordinator, "async_track_state_change_event", return_value=unsubscribe) as track:
             self.coordinator.bind_states()
             self.assertEqual(track.call_args.args[1], ["weather.home", "switch.effects", "sun.sun"])

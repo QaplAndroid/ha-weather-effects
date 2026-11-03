@@ -10,8 +10,10 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
-from .const import CONTROL_KEYS, DEFAULTS, DOMAIN, NUMBER_CONTROLS, SELECT_CONTROLS, SWITCH_CONTROLS
-from .logic import select_weather
+from .const import CONTROL_KEYS, DOMAIN, NUMBER_CONTROLS, SELECT_CONTROLS, SWITCH_CONTROLS
+from .logic import select_weather, parse_time
+from .presets import APPEARANCE_KEYS, configured_settings, configured_control_value, editing_effect, effect_preset
+from .intensity import adapt, weather_metrics, nearest_hourly
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,7 +25,7 @@ class WeatherEffectsCoordinator(DataUpdateCoordinator):
         super().__init__(hass, _LOGGER, name=f"{DOMAIN}_{entry.entry_id}",
                          update_interval=timedelta(minutes=5))
         self.entry = entry
-        self.settings = {**DEFAULTS, **(entry.options or entry.data)}
+        self.settings = configured_settings(entry)
         self._forecast = []
         self._forecast_entity = None
         self._fetched_at = None
@@ -80,20 +82,32 @@ class WeatherEffectsCoordinator(DataUpdateCoordinator):
                         value = int(value)
             if not valid:
                 raise HomeAssistantError(f"Invalid value for Weather Effects control: {key}")
-            options = {**DEFAULTS, **(self.entry.options or self.entry.data)}
+            options = configured_settings(self.entry)
             if key == "mode" and value == "automatic":
                 weather_entity = options.get("weather_entity")
                 if not isinstance(weather_entity, str) or not weather_entity.startswith("weather.") or not weather_entity[8:]:
                     raise HomeAssistantError("Automatic mode requires a configured weather entity")
-            if options.get(key) == value:
+            if configured_control_value(options, key) == value and (
+                key != "effect" or editing_effect(options) == value
+            ):
                 return
-            options[key] = value
+            if key in APPEARANCE_KEYS:
+                target = editing_effect(options)
+                stored = options.get("effect_settings")
+                presets = dict(stored) if isinstance(stored, dict) else {}
+                previous = presets.get(target)
+                presets[target] = {**(previous if isinstance(previous, dict) else {}), key: value}
+                options["effect_settings"] = presets
+            else:
+                options[key] = value
+                if key == "effect":
+                    options["settings_effect"] = value
             self.hass.config_entries.async_update_entry(self.entry, options=options)
 
     async def reconfigure(self):
         """Apply the latest options once, preserving unrelated forecast caches."""
         async with self._reconfigure_lock:
-            settings = {**DEFAULTS, **(self.entry.options or self.entry.data)}
+            settings = configured_settings(self.entry)
             if settings == self.settings:
                 return
             if any(settings.get(key) != self.settings.get(key) for key in (
@@ -121,12 +135,16 @@ class WeatherEffectsCoordinator(DataUpdateCoordinator):
         forecast_time = None
         effect = cfg["effect"]
         status = "ok"
+        attrs = getattr(weather, "attributes", {}) or {}
+        metrics = weather_metrics(attrs, attrs)
+        adaptive = cfg["mode"] == "automatic" and cfg["adaptive_weather"]
         if cfg["mode"] == "automatic":
             offset = cfg["forecast_offset"]
             if entity_id != self._forecast_entity:
                 self._forecast, self._fetched_at = [], None
                 self._forecast_entity = entity_id
-            if offset and entity_id and (self._fetched_at is None or now - self._fetched_at >= timedelta(minutes=15)):
+            needs_forecast = offset or (adaptive and metrics["precipitation_mm_h"] is None)
+            if enabled and needs_forecast and entity_id and (self._fetched_at is None or now - self._fetched_at >= timedelta(minutes=15)):
                 self._fetched_at = now  # Back off on errors as well as successes.
                 self._forecast_error = None
                 try:
@@ -149,6 +167,14 @@ class WeatherEffectsCoordinator(DataUpdateCoordinator):
                 status = "forecast_fallback"
             if current in (None, "unknown", "unavailable") and source != "forecast":
                 effect, status = "off", "weather_unavailable"
+            if source == "forecast":
+                selected = next((row for row in self._forecast if isinstance(row, dict)
+                                 and parse_time(row.get("datetime")) == parse_time(forecast_time)), {})
+                metrics = weather_metrics(selected, attrs, hourly=True)
+            else:
+                metrics = weather_metrics(attrs, attrs, rain_row=nearest_hourly(self._forecast, now) if adaptive else None)
+        preset = effect_preset(cfg, effect)
+        effective, intensity = adapt(preset, effect, metrics, adaptive, cfg["heat_threshold"])
         if gate_id and (gate is None or gate.state in {"unknown", "unavailable"}):
             status = "enable_entity_unavailable"
         return {
@@ -157,7 +183,10 @@ class WeatherEffectsCoordinator(DataUpdateCoordinator):
             "enabled": enabled,
             "dashboards": cfg["dashboards"],
             "effect": effect if enabled else "off",
-            **{key: cfg[key] for key in ("speed", "size", "density", "opacity", "wind", "respect_reduced_motion", "max_fps")},
+            **effective,
+            "settings_effect": editing_effect(cfg), "preset": preset,
+            "intensity": intensity, "weather_metrics": metrics,
+            **{key: cfg[key] for key in ("respect_reduced_motion", "max_fps", "adaptive_weather", "heat_threshold", "lightning_enabled", "lightning_interval", "lightning_brightness")},
             "mode": cfg["mode"], "source": source, "condition": condition,
             "forecast_time": forecast_time, "forecast_offset": cfg["forecast_offset"],
             "status": status, "weather_entity": entity_id,

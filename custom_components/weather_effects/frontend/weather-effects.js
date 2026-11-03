@@ -32,8 +32,8 @@ export function cloudSilhouette(ctx, variant = 0) {
   ctx.closePath();
 }
 // Each array item is one animated visual primitive; celestial bodies are cached sprites.
-const SCENE_ARRAYS = ["clouds", "fog", "wind", "rain", "snow", "hail", "ripples", "stars", "sun", "moon"];
-const SPRITE_KEYS = new Set(["cloud0", "cloud1", "darkCloud0", "darkCloud1", "fog", "snow0", "snow1", "snow2", "hail", "star", "sun", "moon"]);
+const SCENE_ARRAYS = ["clouds", "fog", "wind", "rain", "snow", "hail", "ripples", "stars", "sun", "moon", "heat", "heatGlow"];
+const SPRITE_KEYS = new Set(["cloud0", "cloud1", "darkCloud0", "darkCloud1", "fog", "snow0", "snow1", "snow2", "hail", "star", "sun", "moon", "heatGlow"]);
 export function scenePrimitiveCount(scene) {
   return SCENE_ARRAYS.reduce((sum, key) => sum + (scene[key]?.length || 0), 0);
 }
@@ -50,7 +50,8 @@ export function allocateBudget(counts, budget = MAX_PARTICLES) {
   return result;
 }
 const visualSignature = configs => JSON.stringify(configs.map(c =>
-  [c.effect, c.speed, c.size, c.density, c.opacity, c.wind, c.max_fps]));
+  [c.effect, c.speed, c.size, c.density, c.opacity, c.wind, c.max_fps, c.intensity,
+    c.lightning_enabled, c.lightning_interval, c.lightning_brightness]));
 const BLOCKED_ROUTES = new Set(["config", "settings", "developer-tools", "profile", "auth", "onboarding", "lovelace-editor", "editor", "history", "logbook", "energy", "map", "calendar", "todo", "media-browser"]);
 const clamp = (value, low, high, fallback) => {
   const n = typeof value === "number" ? value : Number.NaN;
@@ -78,6 +79,15 @@ export function normalizeConfig(raw) {
     density: Math.round(clamp(raw.density, 10, 200, 70)), opacity: clamp(raw.opacity, 0.05, 1, 0.65),
     wind: clamp(raw.wind, -2, 2, 0), respect_reduced_motion: raw.respect_reduced_motion !== false,
     max_fps: clamp(raw.max_fps, 15, 60, 30),
+    intensity: {
+      heat: clamp(raw.intensity?.heat, 0, 1, 0),
+      cloud: clamp(raw.intensity?.cloud, 0, 1, null),
+      rain: clamp(raw.intensity?.rain, 0, 1, null),
+      wind: clamp(raw.intensity?.wind, 0, 1, null),
+    },
+    lightning_enabled: raw.lightning_enabled === true,
+    lightning_interval: clamp(raw.lightning_interval, 5, 60, 12),
+    lightning_brightness: clamp(raw.lightning_brightness, 0.05, 0.25, 0.10),
   };
 }
 export function matchesDashboard(config, pathname, search = "") {
@@ -94,11 +104,45 @@ export function activeConfigs(configs, location, reducedMotion = false) {
     && !(reducedMotion && config.respect_reduced_motion));
 }
 
+export const lightningEligible = c => c.lightning_enabled === true && ["storm", "storm_clouds"].includes(c.effect);
+// One monotonic-clock scheduler for the whole overlay, independent of scene rebuilds.
+// Public update/step and timestamps allow deterministic browser and unit safety checks.
+export class LightningScheduler {
+  constructor() {
+    this.key = ""; this.nextAt = Infinity; this.lastAt = -Infinity;
+    this.flash = null; this.duration = 220; this.serial = 0;
+  }
+  update(configs, allowed, now) {
+    const eligible = allowed ? configs.filter(lightningEligible) : [];
+    const interval = eligible.length ? Math.max(5000, Math.min(...eligible.map(c => c.lightning_interval * 1000))) : 0;
+    const brightness = eligible.length ? Math.min(...eligible.map(c => c.lightning_brightness)) : 0;
+    const key = eligible.length ? JSON.stringify([interval, brightness, eligible.map(c => c.effect)]) : "";
+    const changed = key !== this.key;
+    if (changed) {
+      this.key = key; this.flash = null;
+      this.nextAt = interval ? Math.max(now + interval, this.lastAt + interval) : Infinity;
+    }
+    this.interval = interval; this.brightness = brightness;
+    return changed;
+  }
+  step(now) {
+    if (!this.key) return null;
+    if (this.flash && now - this.flash.started >= this.duration) this.flash = null;
+    if (!this.flash && now >= this.nextAt) {
+      this.lastAt = now; this.nextAt = now + this.interval;
+      this.flash = { started: now, brightness: this.brightness, serial: ++this.serial };
+    }
+    return this.flash;
+  }
+}
+
 export class WeatherEffectsOverlay {
   constructor(win = globalThis.window, doc = globalThis.document) {
     this.win = win; this.doc = doc;
     this.configs = []; this.active = []; this.scenes = []; this.sprites = new Map();
     this.signature = "";
+    this.lightning = new LightningScheduler();
+    this.bolt = new Float32Array(18); this.boltSerial = 0;
     this.connection = null; this.unsubscribe = null; this.epoch = 0;
     this.pending = false; this.retryAt = 0; this.failures = 0;
     this.running = false; this.frame = null; this.lastFrame = null;
@@ -183,6 +227,7 @@ export class WeatherEffectsOverlay {
     const changed = force || signature !== this.signature;
     this.signature = signature;
     this.active = active;
+    this.syncLightning();
     if (!active.length) { this.pause(); return; }
     if (!this.ensureCanvas()) return;
     if (changed || !this.scenes.length) this.buildScenes();
@@ -213,7 +258,44 @@ export class WeatherEffectsOverlay {
     this.canvas.height = Math.round(this.height * this.dpr);
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
   }
+  now() { return this.win.performance?.now?.() ?? 0; }
+  syncLightning(time = this.now()) {
+    const hadFlash = Boolean(this.lightning.flash);
+    const allowed = this.running && !this.doc.hidden && !this.motion?.matches;
+    // Recheck routes here too: callable frame/scheduler methods never bypass eligibility.
+    const selected = activeConfigs(this.configs, this.win.location, Boolean(this.motion?.matches));
+    const changed = this.lightning.update(selected, allowed, time);
+    if (changed && hadFlash && this.ctx) this.ctx.clearRect(0, 0, this.width, this.height);
+  }
+  stepLightning(time = this.now()) {
+    this.syncLightning(time);
+    const flash = this.lightning.step(time);
+    if (flash && flash.serial !== this.boltSerial) {
+      this.boltSerial = flash.serial;
+      const x = this.width * (0.25 + Math.random() * 0.5);
+      for (let i = 0; i < 9; i++) {
+        this.bolt[i * 2] = x + (i ? (Math.random() - 0.5) * this.width * 0.07 : 0);
+        this.bolt[i * 2 + 1] = this.height * (0.07 + i * 0.055);
+      }
+    }
+    return flash;
+  }
+  drawLightning(time) {
+    const flash = this.stepLightning(time);
+    if (!flash) return;
+    const ctx = this.ctx, age = Math.max(0, (time - flash.started) / this.lightning.duration);
+    // Single smooth pulse; no branches, repeated strokes, secondary pulses or strobe.
+    const fade = (1 - age) ** 2;
+    ctx.globalAlpha = flash.brightness * fade; ctx.fillStyle = "rgb(219,231,255)";
+    ctx.fillRect(0, 0, this.width, this.height);
+    ctx.globalAlpha = Math.min(0.75, flash.brightness * 3) * fade;
+    ctx.strokeStyle = "rgb(224,238,255)"; ctx.lineWidth = 2; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(this.bolt[0], this.bolt[1]);
+    for (let i = 1; i < 9; i++) ctx.lineTo(this.bolt[i * 2], this.bolt[i * 2 + 1]);
+    ctx.stroke();
+  }
   pause() {
+    this.lightning.update([], false, this.now());
     if (this.frame !== null) this.win.cancelAnimationFrame(this.frame);
     this.frame = null; this.lastFrame = null;
     if (this.canvas) {
@@ -228,7 +310,8 @@ export class WeatherEffectsOverlay {
       const rain = layers.includes("rain") || layers.includes("downpour");
       const mixed = rain && layers.includes("snow");
       return {
-        clouds: layers.some(layer => layer === "clouds" || layer === "storm_clouds") ? Math.ceil(d / 22) : 0,
+        clouds: layers.some(layer => layer === "clouds" || layer === "storm_clouds")
+          ? Math.ceil(d / 22 * (config.intensity.cloud === null ? 1 : 0.35 + 1.65 * config.intensity.cloud)) : 0,
         fog: layers.includes("fog") ? Math.ceil(d / 16) : 0,
         wind: layers.includes("wind") ? Math.ceil(d / 9) : 0,
         rain: rain ? Math.round(d * (mixed ? 0.56 : layers.includes("downpour") ? 1.8 : 1)) : 0,
@@ -238,9 +321,13 @@ export class WeatherEffectsOverlay {
         stars: layers.includes("night") ? Math.ceil(d / 5) : 0,
         sun: layers.includes("sun") ? 1 : 0,
         moon: layers.includes("night") ? 1 : 0,
+        heat: layers.includes("sun") && config.intensity.heat > 0 ? Math.ceil(3 * config.intensity.heat) : 0,
+        heatGlow: layers.includes("sun") && config.intensity.heat > 0 ? 1 : 0,
       };
     });
-    const budgets = allocateBudget(plans.map(plan => Object.values(plan).reduce((a, b) => a + b, 0)));
+    // Reserve two dynamic primitives globally: one bolt and its single wash pulse.
+    const boltBudget = this.active.some(lightningEligible) ? 2 : 0;
+    const budgets = allocateBudget(plans.map(plan => Object.values(plan).reduce((a, b) => a + b, 0)), MAX_PARTICLES - boltBudget);
     this.scenes = this.active.map((config, i) => {
       const counts = allocateBudget(SCENE_ARRAYS.map(key => plans[i][key]), budgets[i]);
       const scene = { config, layers: effectLayers(config.effect), time: Math.random() * 30 };
@@ -256,10 +343,10 @@ export class WeatherEffectsOverlay {
       for (const cloud of scene.clouds) cloud.y = Math.min(this.height * 0.42, 80 + Math.random() * Math.min(this.height * 0.18, 145));
       for (const bank of scene.fog) bank.y = this.height * (0.72 + Math.random() * 0.27);
       for (const star of scene.stars) star.y *= 0.48;
-      // Warm only the sprites used here. The finite key set caps cache size at 12;
+      // Warm only used sprites. The finite key set caps cache size at 13;
       // all sprites are <=320x160 CSS px (DPR capped at 2), never viewport-sized.
-      scene.cloudSprite = scene.layers.includes("storm_clouds") ? "darkCloud" : "cloud";
-      for (const key of ["clouds", "fog", "snow", "hail", "stars", "sun", "moon"]) {
+      scene.cloudSprite = scene.layers.includes("storm_clouds") || (config.intensity.cloud !== null && config.intensity.cloud >= 0.65) ? "darkCloud" : "cloud";
+      for (const key of ["clouds", "fog", "snow", "hail", "stars", "sun", "moon", "heatGlow"]) {
         if (!scene[key].length) continue;
         const names = key === "clouds" ? [scene.cloudSprite + "0", scene.cloudSprite + "1"]
           : key === "snow" ? ["snow0", "snow1", "snow2"]
@@ -274,7 +361,7 @@ export class WeatherEffectsOverlay {
     if (!SPRITE_KEYS.has(name)) return null;
     if (this.sprites.has(name)) return this.sprites.get(name);
     const cloud = name.startsWith("cloud") || name.startsWith("darkCloud");
-    const width = cloud || name === "fog" ? 320 : name === "sun" ? 256 : name === "moon" ? 128 : 64;
+    const width = cloud || name === "fog" ? 320 : name === "sun" || name === "heatGlow" ? 256 : name === "moon" ? 128 : 64;
     const height = cloud ? 160 : name === "fog" ? 96 : width;
     const canvas = this.doc.createElement("canvas");
     canvas.width = width * this.dpr; canvas.height = height * this.dpr;
@@ -335,6 +422,9 @@ export class WeatherEffectsOverlay {
         }
         c.stroke();
       }
+    } else if (name === "heatGlow") {
+      glow(128, 128, 126, "255,126,38", 0.65);
+      glow(128, 128, 74, "255,181,63", 0.25);
     } else if (name === "sun") {
       glow(128, 128, 126, "255,213,121", 0.32);
       c.translate(128, 128); c.strokeStyle = "rgba(255,222,149,0.28)"; c.lineWidth = 2; c.lineCap = "round";
@@ -380,6 +470,7 @@ export class WeatherEffectsOverlay {
     for (const scene of this.scenes) {
       scene.time += dt * scene.config.speed;
       this.drawSky(scene);
+      this.drawHeat(scene);
       this.drawClouds(scene, dt);
       this.drawWind(scene, dt);
       this.drawRain(scene, dt);
@@ -388,6 +479,7 @@ export class WeatherEffectsOverlay {
       this.drawFog(scene, dt);
       this.drawRipples(scene, dt);
     }
+    this.drawLightning(time);
     this.ctx.globalAlpha = 1;
     this.frame = this.win.requestAnimationFrame(this.onFrame);
   }
@@ -413,11 +505,30 @@ export class WeatherEffectsOverlay {
     }
     if (moon.length) { ctx.globalAlpha = c.opacity * 0.8; this.image("moon", x, y, 120 * c.size); }
   }
+  drawHeat({ config: c, heat, heatGlow, time }) {
+    const intensity = c.intensity.heat, ctx = this.ctx;
+    if (heatGlow.length) {
+      ctx.globalAlpha = c.opacity * intensity * 0.7;
+      this.image("heatGlow", this.width * 0.82, Math.min(140, this.height * 0.17), (340 + intensity * 110) * c.size);
+    }
+    // Local translucent rising ribbons, never sample or distort dashboard pixels.
+    for (const p of heat) {
+      const x = p.x + Math.sin(time * 0.45 + p.phase) * 9;
+      const y = this.height * (0.4 + p.depth * 0.5);
+      const bend = Math.sin(time * 0.65 + p.phase) * 12;
+      ctx.globalAlpha = c.opacity * intensity * 0.12;
+      ctx.strokeStyle = "rgb(255,185,106)"; ctx.lineWidth = 1.2 * c.size; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(x, y);
+      ctx.bezierCurveTo(x + bend, y - 22, x - bend, y - 45, x + bend * 0.4, y - 70);
+      ctx.stroke();
+    }
+  }
   drawClouds({ config: c, clouds, cloudSprite, time }, dt) {
     for (const p of clouds) {
       p.x += (5 + c.wind * 14) * c.speed * p.depth * dt;
       this.wrap(p, 250 * p.scale);
-      this.ctx.globalAlpha = c.opacity * (cloudSprite === "darkCloud" ? 0.88 : 0.82) * (0.82 + p.depth * 0.18);
+      this.ctx.globalAlpha = c.opacity * (cloudSprite === "darkCloud" ? 0.88 : 0.82) * (0.82 + p.depth * 0.18)
+        * (c.intensity.cloud === null ? 1 : 0.75 + 0.25 * c.intensity.cloud);
       this.image(cloudSprite + p.variant % 2, p.x, p.y + Math.sin(time * 0.14 + p.phase) * 4, 320 * p.scale, 160 * p.scale);
     }
   }

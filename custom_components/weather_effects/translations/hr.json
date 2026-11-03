@@ -19,7 +19,13 @@
           "opacity": "Neprozirnost",
           "wind": "Vjetar (negativno = ulijevo)",
           "respect_reduced_motion": "Poštuj postavku smanjenog kretanja uređaja",
-          "max_fps": "Najveći broj sličica u sekundi"
+          "max_fps": "Najveći broj sličica u sekundi",
+          "settings_effect": "Uredi postavke efekta",
+          "adaptive_weather": "Prilagodi intenzitet vremenskim podacima",
+          "heat_threshold": "Prag vrućine (°C)",
+          "lightning_enabled": "Uključi bljeskove munja (upozorenje na fotosenzitivnost)",
+          "lightning_interval": "Najkraći razmak munja (sekunde)",
+          "lightning_brightness": "Svjetlina bljeska munje"
         },
         "data_description": {
           "dashboards": "Odaberi dashboarde ili upiši njihov URL put, npr. lovelace ili dashboard-home. Bez pune adrese, početne kose crte i putanje prikaza. Efekti se ne prikazuju u postavkama.",
@@ -27,7 +33,17 @@
           "enable_entity": "Neobavezno: odaberi input_boolean.christmasmode ili drugi prekidač. Efekti tada rade samo dok je uključen. Isprazni polje za uklanjanje uvjeta.",
           "forecast_offset": "0 = trenutačno vrijeme; +1 do +72 = najbliža satna prognoza. Izvan raspona prognoze ili kod greške koristi se trenutačno stanje (vidi dijagnostički senzor).",
           "effect": "Koristi se samo u ručnom načinu. Automatski način bira efekt prema vremenskom entitetu.",
-          "respect_reduced_motion": "Zaustavi efekte ako uređaj ili preglednik traži smanjeno kretanje. Isključi samo ako želiš zanemariti tu postavku."
+          "respect_reduced_motion": "Zaustavi efekte ako uređaj traži smanjeno kretanje. Munje su UVIJEK isključene uz smanjeno kretanje, čak i ako je ovaj prekidač isključen.",
+          "adaptive_weather": "Samo automatski način: koristi dostupnu temperaturu, naoblaku, oborinu i vjetar. Za nedostupne vrijednosti ostaje spremljeni profil; oborina može biti procjena satne prognoze.",
+          "heat_threshold": "Iznad ove temperature u °C sunčani efekti dobivaju topliji sjaj i blago titranje vrućine.",
+          "lightning_enabled": "Upozorenje: bljeskovi mogu smetati fotosenzitivnim osobama. Zadano isključeno. Izričito uključi za grmljavinu; ne rade uz smanjeno kretanje.",
+          "lightning_interval": "Najviše jedan kratak bljesak po razmaku kroz sve profile. Najmanje 5 sekundi; bez brzih nizova bljeskova.",
+          "lightning_brightness": "Najveća neprozirnost svjetlosnog bljeska, ograničena na 0,25. Sama munja je vidljivija. Preporučuju se niske vrijednosti.",
+          "speed": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici.",
+          "size": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici.",
+          "density": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici.",
+          "opacity": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici.",
+          "wind": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici."
         },
         "description": "Odaberi gdje i kako se prikazuju vremenski efekti. Sve postavke možeš kasnije promijeniti."
       }
@@ -59,7 +75,13 @@
           "opacity": "Neprozirnost",
           "wind": "Vjetar (negativno = ulijevo)",
           "respect_reduced_motion": "Poštuj postavku smanjenog kretanja uređaja",
-          "max_fps": "Najveći broj sličica u sekundi"
+          "max_fps": "Najveći broj sličica u sekundi",
+          "settings_effect": "Uredi postavke efekta",
+          "adaptive_weather": "Prilagodi intenzitet vremenskim podacima",
+          "heat_threshold": "Prag vrućine (°C)",
+          "lightning_enabled": "Uključi bljeskove munja (upozorenje na fotosenzitivnost)",
+          "lightning_interval": "Najkraći razmak munja (sekunde)",
+          "lightning_brightness": "Svjetlina bljeska munje"
         },
         "data_description": {
           "dashboards": "Odaberi dashboarde ili upiši njihov URL put, npr. lovelace ili dashboard-home. Bez pune adrese, početne kose crte i putanje prikaza. Efekti se ne prikazuju u postavkama.",
@@ -67,7 +89,17 @@
           "enable_entity": "Neobavezno: odaberi input_boolean.christmasmode ili drugi prekidač. Efekti tada rade samo dok je uključen. Isprazni polje za uklanjanje uvjeta.",
           "forecast_offset": "0 = trenutačno vrijeme; +1 do +72 = najbliža satna prognoza. Izvan raspona prognoze ili kod greške koristi se trenutačno stanje (vidi dijagnostički senzor).",
           "effect": "Koristi se samo u ručnom načinu. Automatski način bira efekt prema vremenskom entitetu.",
-          "respect_reduced_motion": "Zaustavi efekte ako uređaj ili preglednik traži smanjeno kretanje. Isključi samo ako želiš zanemariti tu postavku."
+          "respect_reduced_motion": "Zaustavi efekte ako uređaj traži smanjeno kretanje. Munje su UVIJEK isključene uz smanjeno kretanje, čak i ako je ovaj prekidač isključen.",
+          "adaptive_weather": "Samo automatski način: koristi dostupnu temperaturu, naoblaku, oborinu i vjetar. Za nedostupne vrijednosti ostaje spremljeni profil; oborina može biti procjena satne prognoze.",
+          "heat_threshold": "Iznad ove temperature u °C sunčani efekti dobivaju topliji sjaj i blago titranje vrućine.",
+          "lightning_enabled": "Upozorenje: bljeskovi mogu smetati fotosenzitivnim osobama. Zadano isključeno. Izričito uključi za grmljavinu; ne rade uz smanjeno kretanje.",
+          "lightning_interval": "Najviše jedan kratak bljesak po razmaku kroz sve profile. Najmanje 5 sekundi; bez brzih nizova bljeskova.",
+          "lightning_brightness": "Najveća neprozirnost svjetlosnog bljeska, ograničena na 0,25. Sama munja je vidljivija. Preporučuju se niske vrijednosti.",
+          "speed": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici.",
+          "size": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici.",
+          "density": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici.",
+          "opacity": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici.",
+          "wind": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici."
         },
         "description": "Odaberi gdje i kako se prikazuju vremenski efekti. Sve postavke možeš kasnije promijeniti."
       }
@@ -105,7 +137,29 @@
         "hail": "Tuča",
         "sleet": "Susnježica",
         "downpour": "Pljusak",
-        "storm": "Grmljavinsko nevrijeme (bez bljeskanja)",
+        "storm": "Grmljavinsko nevrijeme",
+        "storm_clouds": "Olujni oblaci"
+      }
+    },
+    "settings_effect": {
+      "options": {
+        "off": "Isključeno",
+        "snow": "Snijeg",
+        "rain": "Kiša",
+        "sun": "Sunce",
+        "clouds": "Oblaci",
+        "partlycloudy": "Sunce i oblaci",
+        "rain_clouds": "Kiša i oblaci",
+        "snow_clouds": "Snijeg i oblaci",
+        "fog": "Magla",
+        "wind": "Vjetar",
+        "wind_clouds": "Vjetar i oblaci",
+        "night": "Vedra noć",
+        "night_clouds": "Mjesec i oblaci",
+        "hail": "Tuča",
+        "sleet": "Susnježica",
+        "downpour": "Pljusak",
+        "storm": "Grmljavinsko nevrijeme",
         "storm_clouds": "Olujni oblaci"
       }
     }
@@ -117,6 +171,12 @@
       },
       "respect_reduced_motion": {
         "name": "Poštuj postavku smanjenog kretanja uređaja"
+      },
+      "adaptive_weather": {
+        "name": "Prilagodi intenzitet vremenskim podacima"
+      },
+      "lightning_enabled": {
+        "name": "Uključi bljeskove munja (upozorenje na fotosenzitivnost)"
       }
     },
     "select": {
@@ -146,7 +206,30 @@
           "hail": "Tuča",
           "sleet": "Susnježica",
           "downpour": "Pljusak",
-          "storm": "Grmljavinsko nevrijeme (bez bljeskanja)",
+          "storm": "Grmljavinsko nevrijeme",
+          "storm_clouds": "Olujni oblaci"
+        }
+      },
+      "settings_effect": {
+        "name": "Uredi postavke efekta",
+        "state": {
+          "off": "Isključeno",
+          "snow": "Snijeg",
+          "rain": "Kiša",
+          "sun": "Sunce",
+          "clouds": "Oblaci",
+          "partlycloudy": "Sunce i oblaci",
+          "rain_clouds": "Kiša i oblaci",
+          "snow_clouds": "Snijeg i oblaci",
+          "fog": "Magla",
+          "wind": "Vjetar",
+          "wind_clouds": "Vjetar i oblaci",
+          "night": "Vedra noć",
+          "night_clouds": "Mjesec i oblaci",
+          "hail": "Tuča",
+          "sleet": "Susnježica",
+          "downpour": "Pljusak",
+          "storm": "Grmljavinsko nevrijeme",
           "storm_clouds": "Olujni oblaci"
         }
       }
@@ -172,6 +255,15 @@
       },
       "max_fps": {
         "name": "Najveći broj sličica u sekundi"
+      },
+      "heat_threshold": {
+        "name": "Prag vrućine (°C)"
+      },
+      "lightning_interval": {
+        "name": "Najkraći razmak munja (sekunde)"
+      },
+      "lightning_brightness": {
+        "name": "Svjetlina bljeska munje"
       }
     }
   }

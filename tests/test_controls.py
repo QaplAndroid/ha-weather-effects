@@ -35,6 +35,7 @@ def load_entities():
     stubs = {
         package: _harness.module(package, __path__=[str(_harness.BACKEND)]),
         package + ".const": backend.const,
+        package + ".presets": backend.presets,
         "homeassistant": _harness.module("homeassistant", __path__=[]),
         "homeassistant.components": _harness.module("homeassistant.components", __path__=[]),
         "homeassistant.components.switch": _harness.module("homeassistant.components.switch", SwitchEntity=MockedPlatformEntity),
@@ -67,7 +68,7 @@ class ControlsTests(unittest.IsolatedAsyncioTestCase):
             "name": "Wall", "custom_future_setting": "preserved",
         })
         self.hass = SimpleNamespace(
-            states=SimpleNamespace(get=lambda key: _harness.state("sunny") if key == "weather.home" else None),
+            states=SimpleNamespace(get=lambda key: _harness.state("sunny") if key in {"weather.home", "weather.other"} else (_harness.state("on") if key == "input_boolean.effects" else None)),
             services=SimpleNamespace(async_call=AsyncMock(return_value={"weather.home": {"forecast": [_harness.row("2026-01-15T13:00:00Z")]}})),
             config_entries=SimpleNamespace(async_update_entry=Mock(side_effect=self.persist)),
         )
@@ -85,12 +86,12 @@ class ControlsTests(unittest.IsolatedAsyncioTestCase):
     async def test_full_options_merge_and_sequential_controls(self):
         await self.coordinator.async_set_control("speed", 1.5)
         await self.coordinator.async_set_control("density", 100.0)
-        self.assertEqual(self.entry.options, {**self.entry.data, "speed": 1.5, "density": 100})
+        self.assertEqual(self.entry.options, {**self.entry.data, "effect_settings": {"snow": {"speed": 1.5, "density": 100}}})
         self.assertEqual(self.entry.data["speed"], 1.0)
         self.hass.services.async_call.assert_not_awaited()
         self.assertEqual(self.coordinator.settings["speed"], 1.0)  # listener owns runtime updates
         await self.coordinator.reconfigure()
-        self.assertEqual(self.coordinator.settings["speed"], 1.5)
+        self.assertEqual(backend.presets.effect_preset(self.coordinator.settings, "snow")["speed"], 1.5)
 
     async def test_options_are_authoritative_including_removed_optional_settings(self):
         self.entry.options = {**backend.const.DEFAULTS, "dashboards": ["different"]}
@@ -103,7 +104,8 @@ class ControlsTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.gather(*(self.coordinator.async_set_control(key, value) for key, value in (
             ("speed", 2.1), ("size", 1.7), ("enabled", False), ("wind", -0.4), ("effect", "rain"))))
         for key, expected in (("speed", 2.1), ("size", 1.7), ("enabled", False), ("wind", -0.4), ("effect", "rain")):
-            self.assertEqual(self.entry.options[key], expected)
+            actual = backend.presets.effect_preset(self.entry.options, "snow")[key] if key in backend.presets.APPEARANCE_KEYS else self.entry.options[key]
+            self.assertEqual(actual, expected)
         self.assertEqual(self.entry.options["enable_entity"], "input_boolean.effects")
 
     async def test_invalid_keys_types_ranges_steps_and_nonfinite_rejected(self):
@@ -122,9 +124,9 @@ class ControlsTests(unittest.IsolatedAsyncioTestCase):
         for key, (low, high, step) in backend.const.NUMBER_CONTROLS.items():
             for value in (low, high, low + step):
                 await self.coordinator.async_set_control(key, value)
-                self.assertAlmostEqual((self.entry.options or self.entry.data)[key], value)
+                self.assertAlmostEqual(backend.presets.configured_control_value(self.entry.options or self.entry.data, key), value)
         await self.coordinator.async_set_control("wind", 0.1 + 0.2)
-        self.assertEqual(self.entry.options["wind"], 0.3)
+        self.assertEqual(backend.presets.configured_control_value(self.entry.options, "wind"), 0.3)
 
     async def test_automatic_requires_configured_weather_not_available_weather(self):
         for weather in (None, "", "sensor.wrong", "weather."):
@@ -179,11 +181,30 @@ class ControlsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(refresh.await_count, 1)
         self.assertEqual(self.hass.services.async_call.await_count, 2)
 
+    async def test_native_numbers_follow_edit_target_not_runtime_effect(self):
+        added = []
+        await entities.number.async_setup_entry(self.hass, self.entry, added.extend)
+        controls = {entity.key: entity for entity in added}
+        await self.coordinator.async_set_control("settings_effect", "rain")
+        await self.coordinator.async_set_control("speed", 2.4)
+        await self.coordinator.async_set_control("opacity", .4)
+        self.coordinator.data = {"effect": "snow", "speed": 3, "opacity": 1}
+        self.assertEqual(controls["speed"].native_value, 2.4)
+        self.assertEqual(controls["opacity"].native_value, .4)
+        await self.coordinator.async_set_control("settings_effect", "sun")
+        self.assertEqual(controls["speed"].native_value, 1)
+        await self.coordinator.async_set_control("speed", 1.8)
+        self.assertEqual(controls["speed"].native_value, 1.8)
+        await self.coordinator.async_set_control("settings_effect", "rain")
+        self.assertEqual(controls["speed"].native_value, 2.4)
+        self.assertEqual(self.entry.options["speed"], 1)
+        self.assertEqual(self.entry.options["effect"], "snow")
+
     async def test_platform_entities_identity_metadata_configured_state_and_services(self):
         added = []
         for platform in (entities.switch, entities.select, entities.number):
             await platform.async_setup_entry(self.hass, self.entry, added.extend)
-        self.assertEqual(len(added), 11)
+        self.assertEqual(len(added), len(backend.const.CONTROL_KEYS))
         self.assertEqual({entity.key for entity in added}, set(backend.const.CONTROL_KEYS))
         self.coordinator.data = {"enabled": False, "effect": "off"}
         controls = {entity.key: entity for entity in added}
@@ -193,7 +214,7 @@ class ControlsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(entity._attr_device_info["identifiers"], {(backend.const.DOMAIN, "profile")})
             self.assertTrue(entity._attr_has_entity_name)
             self.assertEqual(entity._attr_translation_key, key)
-            self.assertEqual(entity.configured_value, self.entry.data[key])
+            self.assertEqual(entity.configured_value, backend.presets.configured_control_value(self.entry.data, key))
         self.assertTrue(controls["enabled"].is_on)
         self.assertEqual(controls["effect"].current_option, "snow")
         self.assertEqual(controls["effect"]._attr_options, list(backend.const.EFFECTS))

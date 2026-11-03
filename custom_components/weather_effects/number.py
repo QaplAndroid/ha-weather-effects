@@ -18,8 +18,9 @@ class WeatherEffectsNumber(WeatherEffectsControl, NumberEntity):
     def __init__(self, coordinator, entry, key):
         super().__init__(coordinator, entry, key)
         self._attr_native_min_value, self._attr_native_max_value, self._attr_native_step = NUMBER_CONTROLS[key]
-        if key == "forecast_offset":
-            self._attr_native_unit_of_measurement = "h"
+        units = {"forecast_offset": "h", "heat_threshold": "°C", "lightning_interval": "s"}
+        if key in units:
+            self._attr_native_unit_of_measurement = units[key]
 
     @property
     def native_value(self):

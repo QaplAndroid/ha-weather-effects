@@ -34,4 +34,5 @@ class WeatherEffectsStatus(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self):
         return {key: self.coordinator.data.get(key) for key in (
             "enabled", "mode", "source", "condition", "forecast_offset", "forecast_time",
-            "status", "weather_entity", "dashboards")}
+            "status", "weather_entity", "dashboards", "settings_effect", "preset", "intensity",
+            "weather_metrics", "adaptive_weather", "lightning_enabled", "lightning_interval", "lightning_brightness")}

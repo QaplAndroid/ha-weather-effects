@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="hr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Weather Effects — kontrolna kartica demo</title><style>
+:root{font:16px system-ui;color-scheme:dark;--primary-text-color:#e4edf6;--secondary-text-color:#9eb3c8;--primary-color:#77c9ff;--card-background-color:#182b40;--divider-color:#35495d;--error-color:#ffb7a8}body{margin:0;background:#0d1b2a;color:var(--primary-text-color)}header{max-width:900px;margin:auto;padding:26px 24px 8px}h1{font-size:24px;margin:0 0 8px}p{color:#9eb3c8;line-height:1.6}.layout{max-width:900px;margin:auto;padding:16px 24px 40px}#error{color:#ffb7a8}a{color:#77c9ff}</style></head>
+<body><header><h1>Weather Effects — kontrolna kartica</h1><p>Lokalni testni prikaz s izmišljenim profilom i memorijskim HA servisima. Nije spojen na Home Assistant i ne mijenja postavke doma. <a href="./">Grafički demo</a></p><div id="error"></div></header><main class="layout"><weather-effects-control-card></weather-effects-control-card></main>
+<script type="module">
+try {
+  await import('../custom_components/weather_effects/frontend/weather-effects-card.js');
+  const effects=['off','snow','rain','sun','clouds','partlycloudy','rain_clouds','snow_clouds','fog','wind','wind_clouds','night','night_clouds','hail','sleet','downpour','storm','storm_clouds'];
+  const defaults={speed:1,size:1,density:60,opacity:0.65,wind:0.2};
+  const settings={enabled:true,respect_reduced_motion:true,adaptive_weather:true,lightning_enabled:false,mode:'manual',effect:'snow',settings_effect:'snow',forecast_offset:0,max_fps:30,heat_threshold:30,lightning_interval:12,lightning_brightness:0.1};
+  const ranges={forecast_offset:[0,72,1],speed:[0.2,3,0.1],size:[0.3,3,0.1],density:[10,200,1],opacity:[0.05,1,0.05],wind:[-2,2,0.1],max_fps:[15,60,1],heat_threshold:[25,45,1],lightning_interval:[5,60,1],lightning_brightness:[0.05,0.25,0.05]};
+  const presets={},calls=[],callbacks=new Set(),controls={};
+  const switches=['enabled','respect_reduced_motion','adaptive_weather','lightning_enabled'];
+  const selects=['mode','effect','settings_effect'];
+  for(const key of [...switches,...selects,...Object.keys(ranges),'status']){
+    const domain=switches.includes(key)?'switch':selects.includes(key)?'select':key==='status'?'sensor':'number';
+    controls[key]=`${domain}.demo_${key}`;
+  }
+  const card=document.querySelector('weather-effects-control-card');
+  let hass;
+  function refresh(){
+    const states={};
+    for(const [key,id] of Object.entries(controls)){
+      const presetKey=Object.hasOwn(defaults,key),value=presetKey?(presets[settings.settings_effect]?.[key]??defaults[key]):settings[key];
+      const attrs={};
+      if(selects.includes(key))attrs.options=key==='mode'?['manual','automatic']:effects;
+      if(ranges[key])[attrs.min,attrs.max,attrs.step]=ranges[key];
+      states[id]={entity_id:id,state:switches.includes(key)?(value?'on':'off'):String(value??'off'),attributes:attrs};
+    }
+    const runtimeEffect=settings.mode==='automatic'?'sun':settings.effect;
+    const profile={id:'demo-profile',name:'Demo profil',enabled:settings.enabled,effective_enabled:settings.enabled,configured_enabled:settings.enabled,gate_entity:null,gate_enabled:null,controls,
+      effect:settings.enabled?runtimeEffect:'off',mode:settings.mode,settings_effect:settings.settings_effect,...defaults,...presets[runtimeEffect],preset:{...defaults,...presets[runtimeEffect]},
+      source:settings.mode==='automatic'?'current':'manual',status:'ok',condition:settings.mode==='automatic'?'sunny':null,weather_entity:'weather.demo',dashboards:['lovelace'],
+      adaptive_weather:settings.adaptive_weather,lightning_enabled:settings.lightning_enabled,
+      intensity:{heat:settings.mode==='automatic'&&settings.adaptive_weather?0.5:0,cloud:null,rain:null,wind:null},
+      weather_metrics:{temperature_c:36,cloud_coverage:70,precipitation_mm_h:3,wind_kmh:35,precipitation_source:'hourly_forecast'}};
+    hass={...hass,states};card.hass=hass;
+    for(const cb of callbacks)cb([profile]);
+  }
+  const connection={connected:true,subscribeMessage(cb){callbacks.add(cb);queueMicrotask(refresh);return Promise.resolve(()=>callbacks.delete(cb));}};
+  hass={language:'hr',connection,states:{},async callService(domain,service,data){
+    calls.push({domain,service,data:{...data}});
+    const key=Object.keys(controls).find(key=>controls[key]===data.entity_id);
+    if(!key)throw new Error('Unknown demo control');
+    if(domain==='switch')settings[key]=service==='turn_on';
+    else if(domain==='select'){settings[key]=data.option;if(key==='effect')settings.settings_effect=data.option;}
+    else if(domain==='number'){
+      if(Object.hasOwn(defaults,key))presets[settings.settings_effect]={...presets[settings.settings_effect],[key]:data.value};
+      else settings[key]=data.value;
+    }else throw new Error('Unknown demo service');
+    refresh();
+  }};
+  card.setConfig({type:'custom:weather-effects-control-card',profile:'demo-profile'});
+  refresh();
+  window.weatherEffectsControlDemo={card,get hass(){return hass;},settings,presets,calls,controls,refresh};
+}catch(error){document.querySelector('#error').textContent=error.message;window.weatherEffectsControlDemoError=String(error);}
+</script></body></html>
