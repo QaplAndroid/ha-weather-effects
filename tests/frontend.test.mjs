@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 // HA serves an ES module, without requiring a package.json in the integration.
 const source = await readFile(new URL('../custom_components/weather_effects/frontend/weather-effects.js', import.meta.url), 'utf8');
-const { normalizeDashboard, normalizeConfig, effectLayers, matchesDashboard, activeConfigs, WeatherEffectsOverlay, MAX_PARTICLES } =
+const { normalizeDashboard, normalizeConfig, effectLayers, matchesDashboard, activeConfigs, WeatherEffectsOverlay, MAX_PARTICLES, EFFECTS, scenePrimitiveCount, allocateBudget } =
   await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 const config = (extra = {}) => normalizeConfig({ id: 'test', enabled: true, dashboards: ['lovelace', 'dashboard-home'], effect: 'snow', ...extra });
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
@@ -19,7 +19,14 @@ function mockEnvironment() {
       listenerCount() { return [...listeners.values()].reduce((sum, callbacks) => sum + callbacks.size, 0); },
     };
   };
-  const context = new Proxy({ clearCount: 0, clearRect() { this.clearCount++; }, createRadialGradient() { return { addColorStop() {} }; }, createLinearGradient() { return { addColorStop() {} }; } }, {
+  const context = new Proxy({
+    clearCount: 0, drawCount: 0, fillRects: [],
+    clearRect() { this.clearCount++; },
+    drawImage(image, ...coords) { assert.ok(image, 'sprite must already exist'); assert.ok(coords.every(Number.isFinite)); this.drawCount++; },
+    fillRect(...coords) { this.fillRects.push(coords); },
+    createRadialGradient() { return { addColorStop() {} }; },
+    createLinearGradient() { return { addColorStop() {} }; },
+  }, {
     get(target, key) { return key in target ? target[key] : () => {}; },
   });
   const canvases = [];
@@ -93,7 +100,15 @@ test('settings and editors are never decorated, including explicit allow-list en
 });
 
 test('all effects map to compositable layers; unknown values safely disable', () => {
-  const expected = { off: [], snow: ['snow'], rain: ['rain'], sun: ['sun'], clouds: ['clouds'], partlycloudy: ['sun', 'clouds'], rain_clouds: ['clouds', 'rain'], snow_clouds: ['clouds', 'snow'] };
+  const expected = {
+    off: [], snow: ['snow'], rain: ['rain'], sun: ['sun'], clouds: ['clouds'],
+    partlycloudy: ['sun', 'clouds'], rain_clouds: ['clouds', 'rain'], snow_clouds: ['clouds', 'snow'],
+    fog: ['fog'], wind: ['wind'], wind_clouds: ['clouds', 'wind'], night: ['night'],
+    night_clouds: ['night', 'clouds'], hail: ['clouds', 'hail'], sleet: ['clouds', 'rain', 'snow'],
+    downpour: ['clouds', 'downpour'], storm: ['storm_clouds', 'wind', 'rain'], storm_clouds: ['storm_clouds', 'wind'],
+  };
+  assert.equal(Object.keys(expected).length, 18);
+  assert.deepEqual(Object.keys(EFFECTS).sort(), Object.keys(expected).sort());
   for (const [effect, layers] of Object.entries(expected)) assert.deepEqual(effectLayers(effect), layers);
   assert.deepEqual(effectLayers('toString'), []);
   assert.deepEqual(effectLayers('unknown'), []);
@@ -182,16 +197,172 @@ test('all rendering combinations run, particle budgets and FPS limits remain bou
   const env = mockEnvironment(), conn = env.connection(); env.doc.root = { hass: { connection: conn } };
   const overlay = new WeatherEffectsOverlay(env.win, env.doc).start(); await flush();
   let time = 0;
-  for (const effect of ['snow', 'rain', 'sun', 'clouds', 'partlycloudy', 'rain_clouds', 'snow_clouds']) {
-    conn.callback([config({ effect })]); env.tick(time += 100); env.tick(time += 40);
-    assert.equal(env.raf.size, 1, effect);
+  for (const effect of Object.keys(EFFECTS)) {
+    conn.callback([config({ effect })]);
+    const allocations = env.canvases.length;
+    env.tick(time += 100); env.tick(time += 40);
+    assert.equal(env.raf.size, effect === 'off' ? 0 : 1, effect);
+    assert.equal(env.canvases.length, allocations, `${effect}: no per-frame canvases`);
   }
   conn.callback(Array.from({ length: 32 }, (_, i) => config({ id: String(i), effect: 'snow_clouds', density: 200, max_fps: 15 })));
-  assert.ok(overlay.scenes.reduce((n, scene) => n + scene.particles.length + scene.clouds.length, 0) <= MAX_PARTICLES);
+  assert.ok(overlay.scenes.reduce((n, scene) => n + scenePrimitiveCount(scene), 0) <= MAX_PARTICLES);
   env.tick(time += 100); const count = env.context.clearCount;
   env.tick(time + 10); assert.equal(env.context.clearCount, count);
   env.tick(time + 70); assert.equal(env.context.clearCount, count + 1);
   env.win.innerWidth = 400; env.win.dispatch('resize'); assert.equal(overlay.canvas.width, 800);
   assert.equal(env.doc.body.children.length, 1);
+  overlay.stop();
+});
+
+test('one shared budget includes every visual layer across mixed and worst-case scenes', async () => {
+  const env = mockEnvironment(), conn = env.connection(); env.doc.root = { hass: { connection: conn } };
+  const overlay = new WeatherEffectsOverlay(env.win, env.doc).start(); await flush();
+  const effects = Object.keys(EFFECTS).filter(effect => effect !== 'off');
+  let time = 0;
+  for (const variant of [...effects, 'mixed']) {
+    conn.callback(Array.from({ length: 32 }, (_, i) => config({
+      id: String(i), effect: variant === 'mixed' ? effects[i % effects.length] : variant,
+      density: 200, size: 3, speed: 3, wind: i % 2 ? -2 : 2,
+    })));
+    const count = overlay.scenes.reduce((sum, scene) => sum + scenePrimitiveCount(scene), 0);
+    const independentlyCounted = overlay.scenes.reduce((sum, scene) => sum + Object.values(scene).reduce((n, value) =>
+      n + (Array.isArray(value) && value !== scene.layers ? value.length : 0), 0), 0);
+    assert.equal(count, independentlyCounted, variant);
+    assert.ok(count > 0 && count <= MAX_PARTICLES, `${variant}: ${count}`);
+    const allocations = env.canvases.length;
+    for (let i = 0; i < 4; i++) env.tick(time += 100);
+    assert.equal(env.canvases.length, allocations, variant);
+    for (const scene of overlay.scenes) {
+      for (const key of ['clouds', 'fog', 'wind', 'rain', 'snow', 'hail', 'ripples', 'stars', 'sun', 'moon']) {
+        for (const p of scene[key]) assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y), `${variant}/${key}`);
+      }
+    }
+  }
+  assert.ok(overlay.sprites.size <= 12);
+  overlay.stop();
+});
+
+test('integer budget allocator is safe at zero and tiny budgets without starving the global bound', () => {
+  assert.deepEqual(allocateBudget([], 0), []);
+  assert.deepEqual(allocateBudget([0, 0], 0), [0, 0]);
+  assert.deepEqual(allocateBudget([3, 2, 1], 0), [0, 0, 0]);
+  assert.deepEqual(allocateBudget([3, 2, 1], -1), [0, 0, 0]);
+  assert.deepEqual(allocateBudget([1, 2], 10), [1, 2]);
+  assert.equal(scenePrimitiveCount({}), 0);
+  for (let budget = 0; budget < 20; budget++) {
+    const counts = allocateBudget([200, 7, 14, 1, 40, 0], budget);
+    assert.equal(counts.reduce((a, b) => a + b, 0), budget);
+    assert.ok(counts.every(n => Number.isInteger(n) && n >= 0));
+    assert.equal(counts.at(-1), 0);
+  }
+});
+
+test('sprites are reused across scene changes and size-only resizes, and released on stop', async () => {
+  const env = mockEnvironment(), conn = env.connection(); env.doc.root = { hass: { connection: conn } };
+  const overlay = new WeatherEffectsOverlay(env.win, env.doc).start(); await flush();
+  let time = 0;
+  for (const effect of Object.keys(EFFECTS)) { conn.callback([config({ effect })]); env.tick(time += 100); }
+  assert.equal(overlay.sprites.size, 12);
+  const sprites = new Map(overlay.sprites), allocations = env.canvases.length;
+  for (const effect of Object.keys(EFFECTS)) {
+    conn.callback([config({ effect, size: 2, opacity: 0.4, density: 200 })]);
+    for (let i = 0; i < 3; i++) env.tick(time += 100);
+  }
+  assert.equal(env.canvases.length, allocations);
+  for (const [name, canvas] of sprites) {
+    assert.equal(overlay.sprites.get(name), canvas, name);
+    assert.ok(canvas.width <= 640 && canvas.height <= 512, name);
+  }
+  assert.equal(overlay.sprite('unsupported-key'), null);
+  assert.equal(env.canvases.length, allocations);
+  env.win.innerWidth = 900; env.win.dispatch('resize');
+  assert.equal(env.canvases.length, allocations, 'viewport resize reuses DPR-independent size sprites');
+  conn.callback([config({ effect: 'snow_clouds' })]);
+  env.win.devicePixelRatio = 1; env.win.dispatch('resize');
+  assert.equal(overlay.canvas.width, 900);
+  assert.notEqual(overlay.sprites.get('snow0'), sprites.get('snow0'), 'DPR change invalidates raster resolution');
+  const afterResize = env.canvases.length;
+  env.tick(time += 100); env.tick(time += 100);
+  assert.equal(env.canvases.length, afterResize);
+  overlay.stop();
+  assert.equal(overlay.sprites.size, 0);
+});
+
+test('identical websocket visual configs preserve scene identity, time and particle positions', async () => {
+  const env = mockEnvironment(), conn = env.connection(); env.doc.root = { hass: { connection: conn } };
+  const overlay = new WeatherEffectsOverlay(env.win, env.doc).start(); await flush();
+  conn.callback([config({ effect: 'sleet' })]); env.tick(0); env.tick(100);
+  const scenes = overlay.scenes, scene = scenes[0], time = scene.time, rain = scene.rain[0], x = rain.x, y = rain.y;
+  conn.callback([config({ effect: 'sleet' })]);
+  assert.equal(overlay.scenes, scenes); assert.equal(scene.time, time);
+  assert.equal(scene.rain[0], rain); assert.equal(rain.x, x); assert.equal(rain.y, y);
+  conn.callback([config({ effect: 'sleet', id: 'renamed', dashboards: ['lovelace'], respect_reduced_motion: false })]);
+  assert.equal(overlay.scenes, scenes, 'metadata and allow-list changes do not reset unchanged visuals');
+  for (const [key, value] of Object.entries({ effect: 'hail', size: 2, density: 100, opacity: 0.4, wind: -1, speed: 2, max_fps: 15 })) {
+    const before = overlay.scenes;
+    conn.callback([config({ effect: 'sleet', [key]: value })]);
+    assert.notEqual(overlay.scenes, before, key);
+    conn.callback([config({ effect: 'sleet' })]);
+  }
+  overlay.stop();
+});
+
+test('sleet owns separate rain and snow arrays, each advanced exactly once at its own speed', async () => {
+  const env = mockEnvironment(), conn = env.connection(); env.doc.root = { hass: { connection: conn } };
+  const overlay = new WeatherEffectsOverlay(env.win, env.doc).start(); await flush();
+  conn.callback([config({ effect: 'sleet', speed: 2 })]);
+  const scene = overlay.scenes[0];
+  assert.ok(scene.clouds.length && scene.rain.length && scene.snow.length);
+  assert.notEqual(scene.rain, scene.snow);
+  const rain = scene.rain[0], snow = scene.snow[0];
+  Object.assign(rain, { x: 500, y: 100, depth: 0.5 });
+  Object.assign(snow, { x: 500, y: 100, depth: 0.5 });
+  env.tick(0); env.tick(100);
+  assert.ok(Math.abs(rain.y - (100 + (330 + 470 * 0.5) * 2 * 0.1)) < 1e-9);
+  assert.ok(Math.abs(snow.y - (100 + (18 + 43 * 0.5) * 2 * 0.1)) < 1e-9);
+  overlay.stop();
+});
+
+test('new effects compose distinct particles and storm never paints a fullscreen mask or flash', async () => {
+  const env = mockEnvironment(), conn = env.connection(); env.doc.root = { hass: { connection: conn } };
+  const overlay = new WeatherEffectsOverlay(env.win, env.doc).start(); await flush();
+  for (const [effect, required] of Object.entries({
+    fog: ['fog'], wind: ['wind'], wind_clouds: ['wind', 'clouds'], night: ['stars', 'moon'],
+    night_clouds: ['stars', 'moon', 'clouds'], hail: ['clouds', 'hail'],
+    sleet: ['clouds', 'rain', 'snow'], downpour: ['clouds', 'rain', 'ripples'],
+    storm: ['clouds', 'wind', 'rain'], storm_clouds: ['clouds', 'wind'],
+  })) {
+    conn.callback([config({ effect })]);
+    for (const key of required) assert.ok(overlay.scenes[0][key].length > 0, `${effect}/${key}`);
+    if (effect === 'fog') assert.ok(overlay.scenes[0].fog.every(p => p.y >= env.win.innerHeight * 0.72));
+  }
+  conn.callback([config({ effect: 'rain' })]); const normalRain = overlay.scenes[0].rain.length;
+  conn.callback([config({ effect: 'downpour' })]); assert.ok(overlay.scenes[0].rain.length > normalRain * 1.5);
+  for (const effect of ['storm', 'storm_clouds']) {
+    conn.callback([config({ effect })]);
+    assert.equal(overlay.scenes[0].cloudSprite, 'darkCloud');
+    env.context.fillRects.length = 0;
+    for (let i = 0; i < 30; i++) env.tick(i * 100);
+    assert.deepEqual(env.context.fillRects, [], 'all storm painting is local geometry or cached cloud sprites');
+  }
+  overlay.stop();
+});
+
+test('all variants safely render a one-pixel viewport and pause without RAF while hidden', async () => {
+  const env = mockEnvironment(), conn = env.connection(); env.doc.root = { hass: { connection: conn } };
+  env.win.innerWidth = 0; env.win.innerHeight = 0;
+  const overlay = new WeatherEffectsOverlay(env.win, env.doc).start(); await flush();
+  let time = 0;
+  for (const effect of Object.keys(EFFECTS)) {
+    conn.callback([config({ effect, density: 10, size: 0.3, speed: 3, wind: -2 })]);
+    env.tick(time += 100); env.tick(time += 100);
+    env.doc.hidden = true; env.doc.dispatch('visibilitychange');
+    const clears = env.context.clearCount;
+    env.tick(time += 100);
+    assert.equal(env.raf.size, 0, effect); assert.equal(env.context.clearCount, clears, effect);
+    env.doc.hidden = false; env.doc.dispatch('visibilitychange');
+    assert.equal(env.raf.size, effect === 'off' ? 0 : 1, effect);
+  }
+  assert.equal(overlay.width, 1); assert.equal(overlay.height, 1);
   overlay.stop();
 });

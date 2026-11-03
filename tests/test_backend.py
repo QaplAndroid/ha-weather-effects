@@ -122,11 +122,11 @@ def row(stamp, condition="rainy", **kwargs):
 class LogicTests(unittest.TestCase):
     def test_all_condition_mappings_and_unknown(self):
         expected = {
-            "sunny": "sun", "clear-night": "off", "partlycloudy": "partlycloudy",
-            "cloudy": "clouds", "fog": "clouds", "rainy": "rain_clouds",
-            "pouring": "rain_clouds", "lightning-rainy": "rain_clouds",
-            "snowy": "snow_clouds", "snowy-rainy": "snow_clouds", "hail": "rain_clouds",
-            "windy": "off", "windy-variant": "clouds", "lightning": "clouds", "exceptional": "off",
+            "sunny": "sun", "clear-night": "night", "partlycloudy": "partlycloudy",
+            "cloudy": "clouds", "fog": "fog", "rainy": "rain_clouds",
+            "pouring": "downpour", "lightning-rainy": "storm",
+            "snowy": "snow_clouds", "snowy-rainy": "sleet", "hail": "hail",
+            "windy": "wind", "windy-variant": "wind_clouds", "lightning": "storm_clouds", "exceptional": "off",
             None: "off", "unknown": "off", "unavailable": "off", "invalid": "off",
         }
         for condition, effect in expected.items():
@@ -134,9 +134,34 @@ class LogicTests(unittest.TestCase):
                 self.assertEqual(logic.effect_for_condition(condition), effect)
 
     def test_night_does_not_show_sun(self):
-        for condition, effect in (("sunny", "off"), ("partlycloudy", "clouds"), ("rainy", "rain_clouds")):
+        for condition, effect in (("sunny", "night"), ("partlycloudy", "night_clouds"), ("rainy", "rain_clouds")):
             self.assertEqual(logic.effect_for_condition(condition, False), effect)
         self.assertEqual(logic.effect_for_condition("sunny", True), "sun")
+
+    def test_condition_daytime_flags(self):
+        # Only an explicit False selects night variants; None keeps provider condition.
+        for condition, effect in logic.CONDITIONS.items():
+            for flag in (None, True, False):
+                expected = {"sunny": "night", "partlycloudy": "night_clouds"}.get(condition, effect) if flag is False else effect
+                with self.subTest(condition=condition, is_daytime=flag):
+                    self.assertEqual(logic.effect_for_condition(condition, flag), expected)
+
+    def test_forecast_conditions_are_independent_of_current_sun_state(self):
+        for condition, effect in logic.CONDITIONS.items():
+            for current_daytime in (True, False, None):
+                with self.subTest(condition=condition, current_daytime=current_daytime):
+                    result = logic.select_weather("sunny", [row("2026-01-15T13:00:00Z", condition)], 1, NOW, current_daytime)
+                    self.assertEqual(result, (effect, "forecast", condition, "2026-01-15T13:00:00+00:00"))
+
+    def test_forecast_daytime_flag_overrides_current_sun_only_for_forecast(self):
+        for condition in ("sunny", "partlycloudy"):
+            for forecast_daytime in (True, False):
+                result = logic.select_weather("rainy", [row("2026-01-15T13:00:00Z", condition, is_daytime=forecast_daytime)], 1, NOW, not forecast_daytime)
+                self.assertEqual(result[:2], (logic.effect_for_condition(condition, forecast_daytime), "forecast"))
+
+    def test_forecast_exceptional_is_off_not_current_fallback(self):
+        result = logic.select_weather("sunny", [row("2026-01-15T13:00:00Z", "exceptional")], 1, NOW)
+        self.assertEqual(result[:3], ("off", "forecast", "exceptional"))
 
     def test_parse_z_and_explicit_offsets(self):
         for stamp in ("2026-01-15T12:00:00Z", "2026-01-15T13:00:00+01:00", "2026-01-15T07:00:00-05:00"):
@@ -149,7 +174,7 @@ class LogicTests(unittest.TestCase):
                 self.assertIsNone(logic.parse_time(value))
 
     def test_zero_offset_uses_current_without_reading_forecasts(self):
-        self.assertEqual(logic.select_weather("sunny", [None], 0, NOW, False), ("off", "current", "sunny", None))
+        self.assertEqual(logic.select_weather("sunny", [None], 0, NOW, False), ("night", "current", "sunny", None))
 
     def test_offsets_cross_midnight(self):
         now = datetime(2026, 1, 15, 23, 30, tzinfo=timezone.utc)
@@ -176,7 +201,7 @@ class LogicTests(unittest.TestCase):
         for rows in ([], None, [None, "junk", 1], [row("bad")], [row("2026-01-15T13:00:00")],
                      [{"datetime": "2026-01-15T13:00:00Z"}], [row("2026-01-15T13:00:00Z", "unknown")]):
             with self.subTest(rows=rows):
-                self.assertEqual(logic.select_weather("sunny", rows, 1, NOW, False), ("off", "fallback_current", "sunny", None))
+                self.assertEqual(logic.select_weather("sunny", rows, 1, NOW, False), ("night", "fallback_current", "sunny", None))
 
     def test_no_extrapolation_before_or_after_forecast_coverage(self):
         points = [row("2026-01-15T13:00:00Z"), row("2026-01-15T14:00:00Z")]
@@ -191,7 +216,7 @@ class LogicTests(unittest.TestCase):
         self.assertEqual(logic.select_weather("sunny", points, 3, NOW)[1], "fallback_current")
 
     def test_forecast_night_flag(self):
-        for condition, expected in (("sunny", "off"), ("partlycloudy", "clouds")):
+        for condition, expected in (("sunny", "night"), ("partlycloudy", "night_clouds")):
             result = logic.select_weather("rainy", [row("2026-01-15T13:00:00Z", condition, is_daytime=False)], 1, NOW)
             self.assertEqual(result[:2], (expected, "forecast"))
 
@@ -239,8 +264,20 @@ class CoordinatorTests(unittest.IsolatedAsyncioTestCase):
         self.coordinator.settings.update(mode="automatic", forecast_offset=0)
         self.entities["sun.sun"] = state("below_horizon")
         result = await self.update()
-        self.assertEqual((result["source"], result["effect"]), ("current", "off"))
+        self.assertEqual((result["source"], result["effect"]), ("current", "night"))
         self.hass.services.async_call.assert_not_awaited()
+
+    async def test_new_forecast_effects_use_forecast_not_current_sun(self):
+        self.entities["sun.sun"] = state("below_horizon")
+        for condition, expected in (("fog", "fog"), ("windy", "wind"), ("windy-variant", "wind_clouds"),
+                                    ("snowy-rainy", "sleet"), ("hail", "hail"), ("pouring", "downpour"),
+                                    ("lightning-rainy", "storm"), ("lightning", "storm_clouds"),
+                                    ("sunny", "sun"), ("partlycloudy", "partlycloudy")):
+            with self.subTest(condition=condition):
+                self.coordinator._fetched_at = None
+                self.hass.services.async_call.return_value = {"weather.home": {"forecast": [row("2026-01-15T13:00:00Z", condition)]}}
+                result = await self.update()
+                self.assertEqual((result["source"], result["effect"], result["status"]), ("forecast", expected, "ok"))
 
     async def test_errors_clear_stale_cache_and_back_off(self):
         for error in (MockedHomeAssistantError("provider"), TimeoutError(), ValueError("provider"), TypeError("provider")):
@@ -404,6 +441,23 @@ class ConfigFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(choices(), [{"value": "lovelace", "label": "Overview (/lovelace)"}])
         self.hass.data["panels"] = {"wall": SimpleNamespace(component_name="lovelace", sidebar_title="Wall"), "config": SimpleNamespace(component_name="config", sidebar_title="Settings")}
         self.assertEqual(choices(), [{"value": "wall", "label": "Wall (/wall)"}])
+
+    async def test_effect_enums_preserve_saved_ids_and_include_every_mapping(self):
+        old_effects = ("off", "snow", "rain", "sun", "clouds", "partlycloudy", "rain_clouds", "snow_clouds")
+        new_effects = ("fog", "wind", "wind_clouds", "night", "night_clouds", "hail", "sleet", "downpour", "storm", "storm_clouds")
+        self.assertEqual(backend.const.EFFECTS, old_effects + new_effects)
+        self.assertEqual(backend.const.SELECT_CONTROLS["effect"], backend.const.EFFECTS)
+        self.assertTrue(set(logic.CONDITIONS.values()).issubset(backend.const.EFFECTS))
+        self.assertEqual(len(logic.CONDITIONS), 15)
+        flow = backend.config_flow.WeatherEffectsConfigFlow.async_get_options_flow(SimpleNamespace())
+        flow.hass = self.hass
+        for effect in backend.const.EFFECTS:
+            with self.subTest(effect=effect):
+                flow.config_entry = SimpleNamespace(options={"effect": effect}, data=self.data())
+                form = await flow.async_step_init()
+                marker, selector = next((key, value) for key, value in form["data_schema"].items() if key.key == "effect")
+                self.assertEqual(selector.config["options"], list(backend.const.EFFECTS))
+                self.assertEqual(marker.kwargs["default"], effect)
 
     async def test_user_flow_form_error_and_create(self):
         flow = backend.config_flow.WeatherEffectsConfigFlow()

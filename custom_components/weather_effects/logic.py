@@ -3,11 +3,11 @@ from datetime import datetime, timedelta, timezone
 import re
 
 CONDITIONS = {
-    "sunny": "sun", "clear-night": "off", "partlycloudy": "partlycloudy",
-    "cloudy": "clouds", "fog": "clouds", "rainy": "rain_clouds",
-    "pouring": "rain_clouds", "lightning-rainy": "rain_clouds",
-    "snowy": "snow_clouds", "snowy-rainy": "snow_clouds", "hail": "rain_clouds",
-    "windy": "off", "windy-variant": "clouds", "lightning": "clouds",
+    "sunny": "sun", "clear-night": "night", "partlycloudy": "partlycloudy",
+    "cloudy": "clouds", "fog": "fog", "rainy": "rain_clouds",
+    "pouring": "downpour", "lightning-rainy": "storm",
+    "snowy": "snow_clouds", "snowy-rainy": "sleet", "hail": "hail",
+    "windy": "wind", "windy-variant": "wind_clouds", "lightning": "storm_clouds",
     "exceptional": "off",
 }
 RESERVED_ROUTES = {"config", "profile", "developer-tools", "history", "logbook", "energy",
@@ -27,7 +27,7 @@ def effect_for_condition(condition, is_daytime=None):
     """Never display sun for a known nighttime forecast."""
     effect = CONDITIONS.get(condition, "off")
     if is_daytime is False and effect in ("sun", "partlycloudy"):
-        return "clouds" if effect == "partlycloudy" else "off"
+        return "night_clouds" if effect == "partlycloudy" else "night"
     return effect
 
 

@@ -109,7 +109,7 @@ class ControlsTests(unittest.IsolatedAsyncioTestCase):
     async def test_invalid_keys_types_ranges_steps_and_nonfinite_rejected(self):
         cases = [("bad", 1), ([], 1), ("enabled", 1), ("enabled", "false"),
                  ("respect_reduced_motion", 0), ("mode", "auto"), ("mode", []),
-                 ("effect", "hail"), ("effect", None)]
+                 ("effect", "invalid_effect"), ("effect", None)]
         for key, (low, high, step) in backend.const.NUMBER_CONTROLS.items():
             cases.extend((key, value) for value in (True, "1", None, [], {}, float("nan"), float("inf"), -float("inf"), low - step, high + step, low + step / 2, 10 ** 500))
         for key, value in cases:

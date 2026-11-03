@@ -53,9 +53,14 @@ def translations():
         form = {"title": "Weather Effects", "data": labels, "data_description": DESCRIPTIONS[lang]}
         form["description"] = ("Choose where and how weather effects appear. All options can be changed later."
                                if lang == "en" else "Odaberi gdje i kako se prikazuju vremenski efekti. Sve postavke možeš kasnije promijeniti.")
-        effects = dict(zip(("off", "snow", "rain", "sun", "clouds", "partlycloudy", "rain_clouds", "snow_clouds"),
-                           ("Off", "Snow", "Rain", "Sun", "Clouds", "Sun and clouds", "Rain and clouds", "Snow and clouds") if lang == "en" else
-                           ("Isključeno", "Snijeg", "Kiša", "Sunce", "Oblaci", "Sunce i oblaci", "Kiša i oblaci", "Snijeg i oblaci")))
+        effects = dict(zip(("off", "snow", "rain", "sun", "clouds", "partlycloudy", "rain_clouds", "snow_clouds",
+                            "fog", "wind", "wind_clouds", "night", "night_clouds", "hail", "sleet", "downpour", "storm", "storm_clouds"),
+                           ("Off", "Snow", "Rain", "Sun", "Clouds", "Sun and clouds", "Rain and clouds", "Snow and clouds",
+                            "Fog", "Wind", "Wind and clouds", "Clear night", "Moon and clouds", "Hail", "Sleet", "Heavy rain",
+                            "Thunderstorm (no flashes)", "Storm clouds") if lang == "en" else
+                           ("Isključeno", "Snijeg", "Kiša", "Sunce", "Oblaci", "Sunce i oblaci", "Kiša i oblaci", "Snijeg i oblaci",
+                            "Magla", "Vjetar", "Vjetar i oblaci", "Vedra noć", "Mjesec i oblaci", "Tuča", "Susnježica", "Pljusak",
+                            "Grmljavinsko nevrijeme (bez bljeskanja)", "Olujni oblaci")))
         content = {"title": "Weather Effects", "config": {"step": {"user": form}, "error": ERRORS[lang]},
                    "options": {"step": {"init": form}, "error": ERRORS[lang]},
                    "selector": {"mode": {"options": {"manual": "Manual" if lang == "en" else "Ručno", "automatic": "Automatic" if lang == "en" else "Automatski"}},

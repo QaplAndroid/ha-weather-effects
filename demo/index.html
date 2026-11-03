@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="hr">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weather Effects — grafički demo</title>
+<style>
+:root{color-scheme:dark;font:16px system-ui,sans-serif;color:#e6edf5;background:#101b2c}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 75% 0,#263c59,transparent 65%),#101b2c}.toolbar{position:relative;z-index:10;display:flex;align-items:center;gap:20px;flex-wrap:wrap;padding:18px 32px;border-bottom:1px solid #ffffff1c;background:#101b2ce8}.brand{font-size:20px;font-weight:700}.badge{font-size:12px;letter-spacing:.08em;color:#84cafa;text-transform:uppercase}select,input,button{font:inherit;accent-color:#78caff}select{padding:9px 12px;color:#e6edf5;border:1px solid #65819a;border-radius:10px;background:#21344b}label{display:flex;align-items:center;gap:8px;font-size:14px}input[type=range]{width:90px}main{max-width:1190px;margin:auto;padding:40px 40px 20px}.eyebrow{font-size:12px;letter-spacing:.18em;color:#9db4c8;text-transform:uppercase}h1{font-size:40px;font-weight:500;letter-spacing:-.04em;margin:12px 0}p{color:#9db0c3;line-height:1.7;max-width:650px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:32px}.card{min-height:158px;border:1px solid #ffffff14;border-radius:20px;padding:24px;background:linear-gradient(145deg,#26394e99,#19283cbb);box-shadow:0 8px 25px #0001}.card.wide{grid-column:span 2}.icon{font-size:26px;color:#8bd1ff}.value{font-size:28px;letter-spacing:-.03em;margin:14px 0 5px}.label{color:#a6b5c8;font-size:14px}.line{height:5px;border-radius:5px;background:#8bd1ff33;margin-top:22px;overflow:hidden}.line:after{content:"";display:block;height:100%;width:65%;background:#8bd1ff88}.footer{font-size:12px;color:#7891a9;margin-top:28px}.pill{display:inline-block;border:1px solid #80caff33;border-radius:18px;padding:4px 12px;color:#9ad9ff;font-size:13px}#error{color:#ffb9a6;white-space:pre-wrap}@media(max-width:700px){main{padding:24px}.toolbar{padding:16px}.grid{grid-template-columns:1fr}.card.wide{grid-column:auto}h1{font-size:30px}}
+</style>
+</head>
+<body>
+<header class="toolbar"><div><div class="brand">Weather Effects</div><div class="badge">Lokalni grafički demo · nije Home Assistant</div></div><label>Efekt <select id="effect"></select></label><label>Intenzitet <input id="opacity" type="range" min="0.05" max="1" step="0.05" value="0.65"></label><label>Veličina <input id="size" type="range" min="0.3" max="3" step="0.1" value="1"></label></header>
+<home-assistant><main><div class="eyebrow">Pretpregled atmosfere</div><h1 id="title">Vremenski efekti</h1><p>Primjer pozadine za pregled novih efekata. Kartice i vrijednosti ispod su statična demonstracija — nisu podaci iz tvojeg doma.</p><span class="pill">Proziran sloj · klikovi prolaze kroz efekte</span><div class="grid"><section class="card"><div class="icon">☀</div><div class="value">Dnevni boravak</div><div class="label">Primjer kartice osvjetljenja</div><div class="line"></div></section><section class="card"><div class="icon">⌂</div><div class="value">Ugodan dom</div><div class="label">Primjer statusne kartice</div><div class="line"></div></section><section class="card"><div class="icon">◷</div><div class="value">Automatski</div><div class="label">Primjer načina upravljanja</div><div class="line"></div></section><section class="card wide"><div class="value" style="font-size:22px">Vrijeme koje prati dashboard</div><p style="font-size:14px">Magla, vjetar, snijeg, kiša i vedra noć. Odaberi efekt u gornjem izborniku i pregledaj izgled.</p></section><section class="card"><div class="value" style="font-size:22px">Bez bljeskanja</div><div class="label">Diskretni efekti i ograničen broj čestica</div></section></div><div id="error"></div><div class="footer">Canvas renderer iz integracije · bez vanjskih servisa, prijave i pristupa Home Assistantu.</div></main></home-assistant>
+<script type="module">
+try {
+  const {WeatherEffectsOverlay,EFFECTS}=await import('../custom_components/weather_effects/frontend/weather-effects.js');
+  window.__weatherEffectsOverlay?.stop();
+  const titles={off:'Bez efekta',snow:'Snijeg',rain:'Kiša',sun:'Sunce',clouds:'Oblaci',partlycloudy:'Sunce i oblaci',rain_clouds:'Kiša i oblaci',snow_clouds:'Snijeg i oblaci',fog:'Magla',wind:'Vjetar',wind_clouds:'Vjetar i oblaci',night:'Vedra noć',night_clouds:'Noć i oblaci',hail:'Tuča',sleet:'Susnježica',downpour:'Pljusak',storm:'Grmljavinsko nevrijeme',storm_clouds:'Olujni oblaci'};
+  const select=document.querySelector('#effect');
+  for(const key of Object.keys(EFFECTS)){const option=document.createElement('option');option.value=key;option.textContent=titles[key]||key;select.append(option);}
+  let receive=()=>{};
+  const fixture={connected:true,subscribeMessage(callback){receive=callback;return Promise.resolve(()=>{receive=()=>{};});}};
+  document.querySelector('home-assistant').hass={connection:fixture};
+  const localWindow=new Proxy(window,{get(target,key){if(key==='location')return {pathname:'/lovelace/preview',search:''};const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;}});
+  const overlay=new WeatherEffectsOverlay(localWindow,document).start();
+  const config={id:'demo',enabled:true,dashboards:['lovelace'],effect:new URLSearchParams(location.search).get('effect')||'partlycloudy',speed:1,size:1,density:100,opacity:0.65,wind:0.4,max_fps:30,respect_reduced_motion:true};
+  function update(){receive([{...config}]);select.value=config.effect;document.querySelector('#title').textContent=titles[config.effect]||config.effect;}
+  function setEffect(effect){if(!(effect in EFFECTS))throw new Error('Unknown effect');config.effect=effect;update();}
+  select.addEventListener('change',()=>setEffect(select.value));
+  for(const key of ['opacity','size'])document.querySelector('#'+key).addEventListener('input',event=>{config[key]=Number(event.target.value);update();});
+  window.weatherEffectsDemo={overlay,config,setEffect,effects:Object.keys(EFFECTS)};
+  setTimeout(update,0);
+} catch(error){document.querySelector('#error').textContent='Demo se nije učitao. Pokreni lokalni statički poslužitelj prema uputama. '+error.message;window.weatherEffectsDemoError=String(error);}
+</script>
+</body></html>

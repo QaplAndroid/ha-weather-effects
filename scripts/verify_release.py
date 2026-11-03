@@ -30,6 +30,11 @@ def keys(obj, prefix=""):
 
 
 assert keys(english) == keys(croatian), "Translation key mismatch"
+effects = next(ast.literal_eval(node.value) for node in constants.body
+               if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "EFFECTS"
+                                                       for target in node.targets))
+assert set(effects) == set(english["selector"]["effect"]["options"]), "Effect selector translation mismatch"
+assert set(effects) == set(english["entity"]["select"]["effect"]["state"]), "Native effect translation mismatch"
 for platform, controls in {
     "switch": ("enabled", "respect_reduced_motion"), "select": ("mode", "effect"),
     "number": ("forecast_offset", "speed", "size", "density", "opacity", "wind", "max_fps"),

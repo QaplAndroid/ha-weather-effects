@@ -3,8 +3,32 @@ export const MAX_PARTICLES = 800;
 export const EFFECTS = Object.freeze({
   off: [], snow: ["snow"], rain: ["rain"], sun: ["sun"], clouds: ["clouds"],
   partlycloudy: ["sun", "clouds"], rain_clouds: ["clouds", "rain"],
-  snow_clouds: ["clouds", "snow"],
+  snow_clouds: ["clouds", "snow"], fog: ["fog"], wind: ["wind"],
+  wind_clouds: ["clouds", "wind"], night: ["night"], night_clouds: ["night", "clouds"],
+  hail: ["clouds", "hail"], sleet: ["clouds", "rain", "snow"],
+  downpour: ["clouds", "downpour"], storm: ["storm_clouds", "wind", "rain"],
+  storm_clouds: ["storm_clouds", "wind"],
 });
+// Each array item is one animated visual primitive; celestial bodies are cached sprites.
+const SCENE_ARRAYS = ["clouds", "fog", "wind", "rain", "snow", "hail", "ripples", "stars", "sun", "moon"];
+const SPRITE_KEYS = new Set(["cloud0", "cloud1", "darkCloud0", "darkCloud1", "fog", "snow0", "snow1", "snow2", "hail", "star", "sun", "moon"]);
+export function scenePrimitiveCount(scene) {
+  return SCENE_ARRAYS.reduce((sum, key) => sum + (scene[key]?.length || 0), 0);
+}
+// Proportional integer allocation also works for a zero or sub-layer-sized budget.
+export function allocateBudget(counts, budget = MAX_PARTICLES) {
+  const total = counts.reduce((a, b) => a + b, 0);
+  const limit = Math.max(0, Math.floor(budget));
+  if (total <= limit) return [...counts];
+  const exact = counts.map(n => n * limit / total);
+  const result = exact.map(Math.floor);
+  let remaining = limit - result.reduce((a, b) => a + b, 0);
+  const order = exact.map((n, i) => ({ i, fraction: n - result[i] })).sort((a, b) => b.fraction - a.fraction);
+  for (const { i } of order) { if (!remaining) break; result[i]++; remaining--; }
+  return result;
+}
+const visualSignature = configs => JSON.stringify(configs.map(c =>
+  [c.effect, c.speed, c.size, c.density, c.opacity, c.wind, c.max_fps]));
 const BLOCKED_ROUTES = new Set(["config", "settings", "developer-tools", "profile", "auth", "onboarding", "lovelace-editor", "editor", "history", "logbook", "energy", "map", "calendar", "todo", "media-browser"]);
 const clamp = (value, low, high, fallback) => {
   const n = typeof value === "number" ? value : Number.NaN;
@@ -51,7 +75,8 @@ export function activeConfigs(configs, location, reducedMotion = false) {
 export class WeatherEffectsOverlay {
   constructor(win = globalThis.window, doc = globalThis.document) {
     this.win = win; this.doc = doc;
-    this.configs = []; this.active = []; this.scenes = []; this.sprites = [];
+    this.configs = []; this.active = []; this.scenes = []; this.sprites = new Map();
+    this.signature = "";
     this.connection = null; this.unsubscribe = null; this.epoch = 0;
     this.pending = false; this.retryAt = 0; this.failures = 0;
     this.running = false; this.frame = null; this.lastFrame = null;
@@ -87,7 +112,7 @@ export class WeatherEffectsOverlay {
     this.win.removeEventListener("location-changed", this.onState);
     this.disconnect(); this.pause();
     this.canvas?.remove(); this.canvas = null; this.ctx = null;
-    this.sprites = []; this.scenes = [];
+    this.sprites.clear(); this.scenes = []; this.signature = "";
   }
   release(unsubscribe) {
     if (typeof unsubscribe !== "function") return;
@@ -115,7 +140,7 @@ export class WeatherEffectsOverlay {
       return connection.subscribeMessage(configs => {
         if (!this.running || epoch !== this.epoch || !Array.isArray(configs)) return;
         this.configs = configs.slice(0, 32).map(normalizeConfig).filter(Boolean);
-        this.refresh(true);
+        this.refresh();
       }, { type: "weather_effects/subscribe" });
     }).then(unsubscribe => {
       if (!this.running || epoch !== this.epoch) { this.release(unsubscribe); return; }
@@ -132,7 +157,9 @@ export class WeatherEffectsOverlay {
   refresh(force = false) {
     const active = this.running && !this.doc.hidden
       ? activeConfigs(this.configs, this.win.location, Boolean(this.motion?.matches)) : [];
-    const changed = force || active.length !== this.active.length || active.some((config, i) => config !== this.active[i]);
+    const signature = visualSignature(active);
+    const changed = force || signature !== this.signature;
+    this.signature = signature;
     this.active = active;
     if (!active.length) { this.pause(); return; }
     if (!this.ensureCanvas()) return;
@@ -157,11 +184,12 @@ export class WeatherEffectsOverlay {
     if (!this.canvas) return;
     this.width = Math.max(1, this.win.innerWidth || 1);
     this.height = Math.max(1, this.win.innerHeight || 1);
-    this.dpr = Math.min(2, Math.max(1, this.win.devicePixelRatio || 1));
+    const dpr = Math.min(2, Math.max(1, this.win.devicePixelRatio || 1));
+    if (dpr !== this.dpr) this.sprites.clear();
+    this.dpr = dpr;
     this.canvas.width = Math.round(this.width * this.dpr);
     this.canvas.height = Math.round(this.height * this.dpr);
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    this.sprites = [];
   }
   pause() {
     if (this.frame !== null) this.win.cancelAnimationFrame(this.frame);
@@ -173,55 +201,140 @@ export class WeatherEffectsOverlay {
     }
   }
   buildScenes() {
-    const counts = this.active.map(config => {
-      const layers = effectLayers(config.effect);
-      return (layers.includes("snow") || layers.includes("rain") ? config.density : 0)
-        + (layers.includes("clouds") ? Math.min(10, Math.ceil(config.density / 22)) : 0);
+    const plans = this.active.map(config => {
+      const layers = effectLayers(config.effect), d = config.density;
+      const rain = layers.includes("rain") || layers.includes("downpour");
+      const mixed = rain && layers.includes("snow");
+      return {
+        clouds: layers.some(layer => layer === "clouds" || layer === "storm_clouds") ? Math.ceil(d / 22) : 0,
+        fog: layers.includes("fog") ? Math.ceil(d / 16) : 0,
+        wind: layers.includes("wind") ? Math.ceil(d / 9) : 0,
+        rain: rain ? Math.round(d * (mixed ? 0.56 : layers.includes("downpour") ? 1.8 : 1)) : 0,
+        snow: layers.includes("snow") ? Math.round(d * (mixed ? 0.44 : 1)) : 0,
+        hail: layers.includes("hail") ? d : 0,
+        ripples: rain ? Math.ceil(d / 18) : 0,
+        stars: layers.includes("night") ? Math.ceil(d / 5) : 0,
+        sun: layers.includes("sun") ? 1 : 0,
+        moon: layers.includes("night") ? 1 : 0,
+      };
     });
-    const total = counts.reduce((a, b) => a + b, 0);
+    const budgets = allocateBudget(plans.map(plan => Object.values(plan).reduce((a, b) => a + b, 0)));
     this.scenes = this.active.map((config, i) => {
-      const layers = effectLayers(config.effect);
-      const budget = Math.floor(counts[i] * Math.min(1, MAX_PARTICLES / Math.max(1, total)));
-      const cloudCount = layers.includes("clouds") ? Math.min(budget, Math.min(10, Math.ceil(config.density / 22))) : 0;
-      const particles = Array.from({ length: budget - cloudCount }, () => ({
-        x: Math.random() * this.width, y: Math.random() * this.height,
-        depth: 0.35 + Math.random() * 0.65, phase: Math.random() * Math.PI * 2,
-        spin: (Math.random() - 0.5) * 0.7,
-      }));
-      const clouds = Array.from({ length: cloudCount }, (_, index) => ({
-        x: Math.random() * (this.width + 400) - 200,
-        y: 25 + Math.random() * Math.min(this.height * 0.32, 230),
-        scale: (0.65 + Math.random() * 0.8) * config.size,
-        depth: 0.5 + index / Math.max(1, cloudCount),
-      }));
-      return { config, layers, particles, clouds, time: Math.random() * 30 };
+      const counts = allocateBudget(SCENE_ARRAYS.map(key => plans[i][key]), budgets[i]);
+      const scene = { config, layers: effectLayers(config.effect), time: Math.random() * 30 };
+      SCENE_ARRAYS.forEach((key, index) => {
+        scene[key] = Array.from({ length: counts[index] }, (_, n) => ({
+          x: Math.random() * this.width, y: Math.random() * this.height,
+          depth: 0.25 + Math.random() * 0.75, phase: Math.random() * Math.PI * 2,
+          spin: (Math.random() - 0.5) * 0.6, variant: n % 3,
+          scale: (0.65 + Math.random() * 0.65) * config.size,
+          life: Math.random(),
+        }));
+      });
+      for (const cloud of scene.clouds) cloud.y = 25 + Math.random() * Math.min(this.height * 0.24, 180);
+      for (const bank of scene.fog) bank.y = this.height * (0.72 + Math.random() * 0.27);
+      for (const star of scene.stars) star.y *= 0.48;
+      // Warm only the sprites used here. The finite key set caps cache size at 12;
+      // all sprites are <=320x160 CSS px (DPR capped at 2), never viewport-sized.
+      scene.cloudSprite = scene.layers.includes("storm_clouds") ? "darkCloud" : "cloud";
+      for (const key of ["clouds", "fog", "snow", "hail", "stars", "sun", "moon"]) {
+        if (!scene[key].length) continue;
+        const names = key === "clouds" ? [scene.cloudSprite + "0", scene.cloudSprite + "1"]
+          : key === "snow" ? ["snow0", "snow1", "snow2"]
+          : [({ stars: "star", clouds: "cloud" })[key] || key];
+        for (const name of names) this.sprite(name);
+      }
+      return scene;
     });
   }
-  snowSprite(index) {
-    if (this.sprites[index]) return this.sprites[index];
-    const sprite = this.doc.createElement("canvas");
-    sprite.width = sprite.height = 64 * this.dpr;
-    const c = sprite.getContext("2d");
-    c.scale(this.dpr, this.dpr); c.translate(32, 32);
-    c.strokeStyle = "rgba(242,250,255,0.96)"; c.lineWidth = index === 0 ? 1.5 : 1.1;
-    c.lineCap = "round"; c.beginPath();
-    const radius = 26;
-    for (let arm = 0; arm < 6; arm++) {
-      const angle = arm * Math.PI / 3;
-      const x = Math.cos(angle), y = Math.sin(angle);
-      c.moveTo(0, 0); c.lineTo(x * radius, y * radius);
-      for (const along of [0.48, 0.73]) {
-        const bx = x * radius * along, by = y * radius * along;
-        for (const side of [-1, 1]) {
-          const branch = angle + side * Math.PI / 3;
-          const length = radius * (index === 0 ? 0.24 : 0.19);
-          c.moveTo(bx, by); c.lineTo(bx - Math.cos(branch) * length, by - Math.sin(branch) * length);
+  // Rasterize soft volume once, not overlapping hard-edged ellipse paths per frame.
+  sprite(name) {
+    if (!SPRITE_KEYS.has(name)) return null;
+    if (this.sprites.has(name)) return this.sprites.get(name);
+    const cloud = name.startsWith("cloud") || name.startsWith("darkCloud");
+    const width = cloud || name === "fog" ? 320 : name === "sun" ? 256 : name === "moon" ? 128 : 64;
+    const height = cloud ? 160 : name === "fog" ? 96 : width;
+    const canvas = this.doc.createElement("canvas");
+    canvas.width = width * this.dpr; canvas.height = height * this.dpr;
+    const c = canvas.getContext("2d");
+    c.scale(this.dpr, this.dpr);
+    const glow = (x, y, radius, color, alpha) => {
+      const g = c.createRadialGradient(x, y, 0, x, y, radius);
+      g.addColorStop(0, `rgba(${color},${alpha})`);
+      g.addColorStop(0.5, `rgba(${color},${alpha * 0.65})`);
+      g.addColorStop(1, `rgba(${color},0)`);
+      c.fillStyle = g; c.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+    };
+    if (cloud || name === "fog") {
+      const dark = name.startsWith("dark"), fog = name === "fog";
+      // Seeded texture stays stable across rebuilds and avoids animation noise.
+      let seed = name.endsWith("1") ? 127 : 23;
+      const random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+      c.save(); c.translate(160, fog ? 48 : 84); c.scale(1, fog ? 0.25 : 0.63);
+      for (let i = 0; i < 34; i++) {
+        const x = (random() - 0.5) * 208, y = (random() - 0.5) * (fog ? 60 : 70);
+        const radius = 30 + random() * 36;
+        glow(x, y, radius, dark ? "66,79,103" : fog ? "219,232,239" : "187,206,223", fog ? 0.12 : 0.21);
+      }
+      if (!fog) {
+        for (let i = 0; i < 18; i++) {
+          glow((random() - 0.5) * 200, -14 - random() * 36, 22 + random() * 26,
+            dark ? "121,137,158" : "251,253,255", dark ? 0.13 : 0.24);
         }
       }
+      c.restore();
+    } else if (name.startsWith("snow")) {
+      glow(32, 32, 29, "220,240,255", 0.19);
+      if (name === "snow2") {
+        glow(32, 32, 12, "246,252,255", 0.85);
+      } else {
+        c.translate(32, 32); c.strokeStyle = "rgba(242,250,255,0.94)";
+        c.lineWidth = name === "snow0" ? 1.6 : 1.2; c.lineCap = "round"; c.beginPath();
+        for (let arm = 0; arm < 6; arm++) {
+          const a = arm * Math.PI / 3, x = Math.cos(a), y = Math.sin(a);
+          c.moveTo(0, 0); c.lineTo(x * 24, y * 24);
+          for (const along of [0.48, 0.73]) {
+            for (const side of [-1, 1]) {
+              const branch = a + side * Math.PI / 3, length = name === "snow0" ? 6 : 4.5;
+              c.moveTo(x * 24 * along, y * 24 * along);
+              c.lineTo(x * 24 * along - Math.cos(branch) * length, y * 24 * along - Math.sin(branch) * length);
+            }
+          }
+        }
+        c.stroke();
+      }
+    } else if (name === "sun") {
+      glow(128, 128, 126, "255,213,121", 0.32);
+      c.translate(128, 128); c.strokeStyle = "rgba(255,222,149,0.28)"; c.lineWidth = 2; c.lineCap = "round";
+      c.beginPath();
+      for (let i = 0; i < 12; i++) {
+        const a = i * Math.PI / 6;
+        c.moveTo(Math.cos(a) * 49, Math.sin(a) * 49);
+        c.lineTo(Math.cos(a) * 65, Math.sin(a) * 65);
+      }
+      c.stroke();
+      const disc = c.createRadialGradient(-9, -9, 0, 0, 0, 34);
+      disc.addColorStop(0, "rgba(255,249,215,0.92)"); disc.addColorStop(1, "rgba(255,211,118,0.7)");
+      c.fillStyle = disc; c.beginPath(); c.arc(0, 0, 34, 0, Math.PI * 2); c.fill();
+    } else if (name === "moon") {
+      // Decorative crescent, not an assertion about the real lunar phase.
+      glow(64, 64, 60, "191,213,243", 0.13);
+      c.fillStyle = "rgba(228,237,250,0.86)"; c.beginPath();
+      c.arc(64, 64, 24, Math.PI * 0.22, Math.PI * 1.7);
+      c.bezierCurveTo(51, 47, 49, 74, 82.49, 79.3); c.closePath(); c.fill();
+    } else if (name === "star") {
+      glow(32, 32, 26, "219,235,255", 0.24);
+      glow(32, 32, 8, "242,248,255", 0.9);
+    } else if (name === "hail") {
+      glow(32, 32, 24, "206,232,251", 0.22);
+      const ice = c.createRadialGradient(27, 25, 1, 32, 32, 13);
+      ice.addColorStop(0, "rgba(255,255,255,0.98)"); ice.addColorStop(1, "rgba(163,199,225,0.65)");
+      c.fillStyle = ice; c.beginPath(); c.arc(32, 32, 13, 0, Math.PI * 2); c.fill();
     }
-    c.stroke(); this.sprites[index] = sprite;
-    return sprite;
+    this.sprites.set(name, canvas);
+    return canvas;
   }
+  snowSprite(index) { return this.sprite(`snow${index % 3}`); }
   animate(time) {
     this.frame = null;
     if (!this.running || !this.active.length || this.doc.hidden) { this.pause(); return; }
@@ -231,88 +344,116 @@ export class WeatherEffectsOverlay {
     }
     const dt = this.lastFrame === null ? 0 : Math.min(0.1, (time - this.lastFrame) / 1000);
     this.lastFrame = time;
-    const ctx = this.ctx;
-    ctx.clearRect(0, 0, this.width, this.height);
+    this.ctx.clearRect(0, 0, this.width, this.height);
     for (const scene of this.scenes) {
       scene.time += dt * scene.config.speed;
-      if (scene.layers.includes("sun")) this.drawSun(scene);
-      if (scene.layers.includes("clouds")) this.drawClouds(scene, dt);
-      if (scene.layers.includes("rain")) this.drawRain(scene, dt);
-      if (scene.layers.includes("snow")) this.drawSnow(scene, dt);
+      this.drawSky(scene);
+      this.drawClouds(scene, dt);
+      this.drawWind(scene, dt);
+      this.drawRain(scene, dt);
+      this.drawSnow(scene, dt);
+      this.drawHail(scene, dt);
+      this.drawFog(scene, dt);
+      this.drawRipples(scene, dt);
     }
-    ctx.globalAlpha = 1;
+    this.ctx.globalAlpha = 1;
     this.frame = this.win.requestAnimationFrame(this.onFrame);
   }
-  drawSun({ config: c, time }) {
-    const ctx = this.ctx, x = this.width * 0.82, y = Math.min(150, this.height * 0.18);
-    const radius = 46 * c.size;
-    const glow = ctx.createRadialGradient(x, y, radius * 0.3, x, y, radius * 4.5);
-    glow.addColorStop(0, "rgba(255,226,137,0.40)");
-    glow.addColorStop(0.35, "rgba(255,216,110,0.15)"); glow.addColorStop(1, "rgba(255,221,150,0)");
-    ctx.globalAlpha = c.opacity; ctx.fillStyle = glow;
-    ctx.fillRect(x - radius * 4.5, y - radius * 4.5, radius * 9, radius * 9);
-    ctx.save(); ctx.translate(x, y); ctx.rotate(time * 0.025);
-    ctx.strokeStyle = "rgba(255,226,145,0.35)"; ctx.lineWidth = 2.5 * c.size; ctx.lineCap = "round";
-    ctx.beginPath();
-    for (let i = 0; i < 12; i++) {
-      const a = i * Math.PI / 6;
-      ctx.moveTo(Math.cos(a) * radius * 1.35, Math.sin(a) * radius * 1.35);
-      ctx.lineTo(Math.cos(a) * radius * 1.9, Math.sin(a) * radius * 1.9);
-    }
-    ctx.stroke(); ctx.restore();
-    const disc = ctx.createRadialGradient(x - radius * 0.3, y - radius * 0.3, 0, x, y, radius);
-    disc.addColorStop(0, "rgba(255,249,207,0.9)"); disc.addColorStop(1, "rgba(255,209,101,0.68)");
-    ctx.fillStyle = disc; ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
+  image(name, x, y, width, height = width) {
+    this.ctx.drawImage(this.sprites.get(name), x - width / 2, y - height / 2, width, height);
   }
-  drawClouds({ config: c, clouds }, dt) {
-    const ctx = this.ctx;
-    for (const cloud of clouds) {
-      cloud.x += (5 + c.wind * 15) * c.speed * cloud.depth * dt;
-      const width = 160 * cloud.scale;
-      if (cloud.x > this.width + width) cloud.x = -width;
-      if (cloud.x < -width) cloud.x = this.width + width;
-      ctx.save(); ctx.translate(cloud.x, cloud.y); ctx.scale(cloud.scale, cloud.scale);
-      ctx.globalAlpha = c.opacity * 0.43;
-      const shade = ctx.createLinearGradient(0, -45, 0, 36);
-      shade.addColorStop(0, "rgba(250,253,255,0.9)"); shade.addColorStop(1, "rgba(160,179,199,0.45)");
-      ctx.fillStyle = shade; ctx.beginPath();
-      ctx.ellipse(-44, 5, 46, 27, 0, 0, Math.PI * 2);
-      ctx.ellipse(-8, -16, 40, 38, 0, 0, Math.PI * 2);
-      ctx.ellipse(34, -4, 45, 32, 0, 0, Math.PI * 2);
-      ctx.ellipse(65, 11, 31, 22, 0, 0, Math.PI * 2);
-      ctx.ellipse(0, 15, 78, 24, 0, 0, Math.PI * 2);
-      ctx.fill(); ctx.restore();
+  wrap(p, margin = 50) {
+    if (p.x > this.width + margin) p.x = -margin;
+    if (p.x < -margin) p.x = this.width + margin;
+    if (p.y > this.height + margin) { p.y = -margin; p.x = Math.random() * this.width; }
+  }
+  drawSky({ config: c, time, sun, moon, stars }) {
+    const ctx = this.ctx, x = this.width * 0.82 + Math.sin(time * 0.035) * c.wind * 8;
+    const y = Math.min(140, this.height * 0.17);
+    for (const p of stars) {
+      ctx.globalAlpha = c.opacity * (0.28 + p.depth * 0.32) * (0.85 + Math.sin(time * 0.35 + p.phase) * 0.15);
+      this.image("star", p.x + Math.sin(time * 0.02) * c.wind * 4, p.y, (5 + p.depth * 7) * c.size);
+    }
+    if (sun.length) {
+      ctx.save(); ctx.translate(x, y); ctx.rotate(time * 0.015);
+      ctx.globalAlpha = c.opacity * (0.9 + Math.sin(time * 0.3) * 0.025);
+      this.image("sun", 0, 0, 300 * c.size); ctx.restore();
+    }
+    if (moon.length) { ctx.globalAlpha = c.opacity * 0.8; this.image("moon", x, y, 120 * c.size); }
+  }
+  drawClouds({ config: c, clouds, cloudSprite, time }, dt) {
+    for (const p of clouds) {
+      p.x += (5 + c.wind * 14) * c.speed * p.depth * dt;
+      this.wrap(p, 250 * p.scale);
+      this.ctx.globalAlpha = c.opacity * (cloudSprite === "darkCloud" ? 0.53 : 0.52) * (0.7 + p.depth * 0.3);
+      this.image(cloudSprite + p.variant % 2, p.x, p.y + Math.sin(time * 0.14 + p.phase) * 4, 320 * p.scale, 160 * p.scale);
     }
   }
-  drawRain({ config: c, particles }, dt) {
-    const ctx = this.ctx;
-    ctx.globalAlpha = c.opacity * 0.7; ctx.strokeStyle = "rgba(181,215,245,0.85)";
-    ctx.lineWidth = Math.max(0.65, c.size * 0.9); ctx.lineCap = "round"; ctx.beginPath();
-    for (const p of particles) {
-      const fall = (330 + 430 * p.depth) * c.speed;
-      p.y += fall * dt; p.x += (c.wind * 130 + 15) * c.speed * dt;
-      if (p.y > this.height + 45) { p.y = -45; p.x = Math.random() * this.width; }
-      if (p.x > this.width + 50) p.x = -50;
-      if (p.x < -50) p.x = this.width + 50;
-      const length = (12 + 19 * p.depth) * c.size;
-      ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - (c.wind * 130 + 15) / (330 + 430 * p.depth) * length, p.y - length);
+  drawFog({ config: c, fog, time }, dt) {
+    for (const p of fog) {
+      p.x += (7 + c.wind * 12) * c.speed * dt;
+      this.wrap(p, 300 * p.scale);
+      // Independent, low-lying transparent banks leave the dashboard readable.
+      this.ctx.globalAlpha = c.opacity * 0.2;
+      this.image("fog", p.x, p.y + Math.sin(time * 0.17 + p.phase) * 9, 600 * p.scale, 150 * p.scale);
     }
-    ctx.stroke();
   }
-  drawSnow({ config: c, particles, time }, dt) {
+  drawWind({ config: c, wind, time }, dt) {
     const ctx = this.ctx;
-    for (let index = 0; index < particles.length; index++) {
-      const p = particles[index];
+    for (const p of wind) {
+      const direction = c.wind < 0 ? -1 : 1;
+      p.x += direction * (24 + Math.abs(c.wind) * 22) * c.speed * (0.6 + p.depth) * dt;
+      this.wrap(p, 200 * c.size);
+      const length = (65 + p.depth * 100) * c.size, bend = Math.sin(time * 0.45 + p.phase) * 18 * c.size;
+      ctx.globalAlpha = c.opacity * 0.16 * (0.5 + 0.5 * Math.sin(time * 0.6 + p.phase) ** 2);
+      ctx.strokeStyle = "rgb(214,230,241)"; ctx.lineWidth = (0.5 + p.depth * 0.65) * c.size; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(p.x, p.y);
+      ctx.bezierCurveTo(p.x - length * 0.35 * direction, p.y + bend, p.x - length * 0.65 * direction, p.y - bend, p.x - length * direction, p.y + bend * 0.3);
+      ctx.stroke();
+    }
+  }
+  drawRain({ config: c, rain, layers }, dt) {
+    const ctx = this.ctx, heavy = layers.includes("downpour"), storm = layers.includes("storm_clouds");
+    const fallScale = heavy ? 1.45 : 1;
+    for (const p of rain) {
+      const fall = (330 + 470 * p.depth) * fallScale;
+      const drift = c.wind * 130 + (heavy ? 42 : storm ? 58 : 15);
+      p.y += fall * c.speed * dt; p.x += drift * c.speed * dt; this.wrap(p, 65 * c.size);
+      const length = (9 + 22 * p.depth) * c.size * (heavy ? 1.55 : 1);
+      ctx.globalAlpha = c.opacity * (0.2 + p.depth * (heavy ? 0.62 : 0.48));
+      ctx.strokeStyle = "rgb(184,215,240)"; ctx.lineWidth = (0.45 + p.depth * (heavy ? 1.15 : 0.7)) * c.size;
+      ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x - drift / fall * length, p.y - length); ctx.stroke();
+    }
+  }
+  drawSnow({ config: c, snow, time }, dt) {
+    const ctx = this.ctx;
+    for (const p of snow) {
       p.y += (18 + 43 * p.depth) * c.speed * dt;
       p.x += (c.wind * 35 + Math.sin(time * 0.7 + p.phase) * 12) * c.speed * dt;
-      const radius = (4 + 7 * p.depth) * c.size;
-      if (p.y > this.height + radius) { p.y = -radius; p.x = Math.random() * this.width; }
-      if (p.x > this.width + radius) p.x = -radius;
-      if (p.x < -radius) p.x = this.width + radius;
+      const radius = (3 + 7 * p.depth) * c.size;
+      this.wrap(p, radius);
       ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.phase + time * p.spin);
-      ctx.globalAlpha = c.opacity * (0.4 + p.depth * 0.6);
-      ctx.drawImage(this.snowSprite(index % 2), -radius, -radius, radius * 2, radius * 2);
-      ctx.restore();
+      ctx.globalAlpha = c.opacity * (0.3 + p.depth * 0.65);
+      this.image(`snow${p.depth < 0.45 ? 2 : p.variant % 2}`, 0, 0, radius * 2); ctx.restore();
+    }
+  }
+  drawHail({ config: c, hail }, dt) {
+    for (const p of hail) {
+      p.y += (260 + p.depth * 310) * c.speed * dt;
+      p.x += (c.wind * 85 + 12) * c.speed * dt; this.wrap(p, 16);
+      this.ctx.globalAlpha = c.opacity * (0.5 + p.depth * 0.45);
+      this.image("hail", p.x, p.y, (7 + 8 * p.depth) * c.size);
+    }
+  }
+  drawRipples({ config: c, ripples }, dt) {
+    const ctx = this.ctx;
+    for (const p of ripples) {
+      p.life += dt * c.speed * 0.7;
+      if (p.life >= 1) { p.life %= 1; p.x = Math.random() * this.width; p.y = this.height * (0.82 + Math.random() * 0.17); }
+      ctx.globalAlpha = c.opacity * 0.17 * Math.sin(p.life * Math.PI);
+      ctx.strokeStyle = "rgb(192,218,237)"; ctx.lineWidth = 0.7 * c.size;
+      ctx.beginPath(); ctx.ellipse(p.x, Math.max(this.height * 0.82, p.y), (2 + p.life * 13) * c.size, (0.5 + p.life * 3) * c.size, 0, 0, Math.PI * 2); ctx.stroke();
     }
   }
 }

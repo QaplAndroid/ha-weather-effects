@@ -96,7 +96,17 @@
         "clouds": "Clouds",
         "partlycloudy": "Sun and clouds",
         "rain_clouds": "Rain and clouds",
-        "snow_clouds": "Snow and clouds"
+        "snow_clouds": "Snow and clouds",
+        "fog": "Fog",
+        "wind": "Wind",
+        "wind_clouds": "Wind and clouds",
+        "night": "Clear night",
+        "night_clouds": "Moon and clouds",
+        "hail": "Hail",
+        "sleet": "Sleet",
+        "downpour": "Heavy rain",
+        "storm": "Thunderstorm (no flashes)",
+        "storm_clouds": "Storm clouds"
       }
     }
   },
@@ -127,7 +137,17 @@
           "clouds": "Clouds",
           "partlycloudy": "Sun and clouds",
           "rain_clouds": "Rain and clouds",
-          "snow_clouds": "Snow and clouds"
+          "snow_clouds": "Snow and clouds",
+          "fog": "Fog",
+          "wind": "Wind",
+          "wind_clouds": "Wind and clouds",
+          "night": "Clear night",
+          "night_clouds": "Moon and clouds",
+          "hail": "Hail",
+          "sleet": "Sleet",
+          "downpour": "Heavy rain",
+          "storm": "Thunderstorm (no flashes)",
+          "storm_clouds": "Storm clouds"
         }
       }
     },

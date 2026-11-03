@@ -1,10 +1,14 @@
 """Constants for Weather Effects."""
 DOMAIN = "weather_effects"
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 SIGNAL_UPDATED = f"{DOMAIN}_updated"
 FRONTEND_URL = f"/weather_effects_static/weather-effects.js?v={VERSION}"
 DEFAULT_WEATHER = "weather.forecast_work_work"
-EFFECTS = ("off", "snow", "rain", "sun", "clouds", "partlycloudy", "rain_clouds", "snow_clouds")
+EFFECTS = (
+    "off", "snow", "rain", "sun", "clouds", "partlycloudy", "rain_clouds", "snow_clouds",
+    "fog", "wind", "wind_clouds", "night", "night_clouds", "hail", "sleet", "downpour",
+    "storm", "storm_clouds",
+)
 # Shared by native platforms, validation, and registry-ID lookup for the frontend.
 SWITCH_CONTROLS = ("enabled", "respect_reduced_motion")
 SELECT_CONTROLS = {"mode": ("manual", "automatic"), "effect": EFFECTS}

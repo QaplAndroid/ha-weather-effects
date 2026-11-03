@@ -96,7 +96,17 @@
         "clouds": "Oblaci",
         "partlycloudy": "Sunce i oblaci",
         "rain_clouds": "Kiša i oblaci",
-        "snow_clouds": "Snijeg i oblaci"
+        "snow_clouds": "Snijeg i oblaci",
+        "fog": "Magla",
+        "wind": "Vjetar",
+        "wind_clouds": "Vjetar i oblaci",
+        "night": "Vedra noć",
+        "night_clouds": "Mjesec i oblaci",
+        "hail": "Tuča",
+        "sleet": "Susnježica",
+        "downpour": "Pljusak",
+        "storm": "Grmljavinsko nevrijeme (bez bljeskanja)",
+        "storm_clouds": "Olujni oblaci"
       }
     }
   },
@@ -127,7 +137,17 @@
           "clouds": "Oblaci",
           "partlycloudy": "Sunce i oblaci",
           "rain_clouds": "Kiša i oblaci",
-          "snow_clouds": "Snijeg i oblaci"
+          "snow_clouds": "Snijeg i oblaci",
+          "fog": "Magla",
+          "wind": "Vjetar",
+          "wind_clouds": "Vjetar i oblaci",
+          "night": "Vedra noć",
+          "night_clouds": "Mjesec i oblaci",
+          "hail": "Tuča",
+          "sleet": "Susnježica",
+          "downpour": "Pljusak",
+          "storm": "Grmljavinsko nevrijeme (bez bljeskanja)",
+          "storm_clouds": "Olujni oblaci"
         }
       }
     },

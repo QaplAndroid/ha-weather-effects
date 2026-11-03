@@ -174,4 +174,18 @@ test('subscription failure backs off without hass-update spam and can retry', as
   } finally { card.disconnectedCallback(); }
 });
 
+test('all effect options have HR/EN labels and can be selected through native controls', async () => {
+  const translations = JSON.parse(await readFile(new URL('../custom_components/weather_effects/translations/en.json', import.meta.url), 'utf8'));
+  const options = Object.keys(translations.selector.effect.options);
+  assert.equal(options.length, 18);
+  const { card, hass, calls } = fixture();
+  hass.states['select.effect'].attributes.options = options;
+  for (const effect of options) {
+    assert.equal(typeof labelsFor('hr')[effect], 'string', `Missing HR label: ${effect}`);
+    assert.equal(typeof labelsFor('en')[effect], 'string', `Missing EN label: ${effect}`);
+    await card.commit('effect', effect);
+    assert.equal(calls.at(-1)[2].option, effect);
+  }
+});
+
 test.after(() => { for (const [key, value] of Object.entries(globals)) { if (value === undefined) delete globalThis[key]; else globalThis[key] = value; } });
