@@ -2,7 +2,7 @@
 
 Snijeg, kiša, sunce i oblaci kao animirani sloj preko **odabranih dashboarda**. Vlastita integracija (custom component), nije Supervisor add-on. Bez HTML kartice, card_mod-a, Lovelace resursa i ručnog uređivanja dashboard YAML-a.
 
-**Verzija 0.5.0 — kartica s vremenskim tabovima i usporena animacija nastajanja razgranate munje.** Kod i simulacije provjereni su lokalno; nije pokrenut stvarni Home Assistant niti provjerena instalacija na tvojoj instanci. Ciljane API mogućnosti: HA 2025.6+ (`async_register_static_paths`, options flow, `weather.get_forecasts`). Kompatibilnost svake HA verzije nije potvrđena.
+**Verzija 0.6.0 — imenovani vizualni preseti, tvorničke postavke te položaj i raspršenost oblaka po efektu.** Kod i simulacije provjereni su lokalno; nije pokrenut stvarni Home Assistant niti provjerena instalacija na tvojoj instanci. Ciljane API mogućnosti: HA 2025.6+ (`async_register_static_paths`, options flow, `weather.get_forecasts`). Kompatibilnost svake HA verzije nije potvrđena.
 
 ## Instalacija kroz HACS (custom repository)
 
@@ -19,7 +19,7 @@ HACS instalaciju također treba potvrditi na stvarnoj instanci; lokalni testovi 
 
 ## Ručna instalacija (alternativa)
 
-1. Preuzmi `weather-effects-0.5.0.zip` sa stranice [Releases](https://github.com/QaplAndroid/ha-weather-effects/releases) i raspakiraj ga na računalu.
+1. Preuzmi `weather-effects-0.6.0.zip` sa stranice [Releases](https://github.com/QaplAndroid/ha-weather-effects/releases) i raspakiraj ga na računalu.
 2. Kopiraj njegovu mapu `custom_components/weather_effects` u HA konfiguracijsku mapu, tako da dobiješ `/config/custom_components/weather_effects/manifest.json`. Ako `custom_components` već postoji, kopiraj samo podmapu `weather_effects` u njega. Nemoj prepisivati druge integracije.
    - Koristi npr. Samba share ili Studio Code Server. Konfiguracijska mapa je ista ona u kojoj se nalazi `configuration.yaml`; na Container/Core instalaciji može biti na drugoj host putanji.
 3. **Ponovno pokreni Home Assistant**, ne samo ponovno učitaj YAML.
@@ -36,7 +36,7 @@ Integracija sada daje **Weather Effects Control Card** koja se može dodati kroz
 
 ### Ako već imaš raniju verziju
 
-U HACS-u ažuriraj **Weather Effects** na 0.5.0 (po potrebi provjeri nova izdanja ili ponovno preuzmi), restartaj HA i potpuno osvježi preglednik. Ne trebaš brisati integraciju ni ponovno stvarati profil. Novi `switch`, `select` i `number` entiteti dodaju se pri pokretanju. Kod ručne instalacije zamijeni mapu integracije sadržajem novog ZIP-a.
+U HACS-u ažuriraj **Weather Effects** na 0.6.0 (po potrebi provjeri nova izdanja ili ponovno preuzmi), restartaj HA i potpuno osvježi preglednik. Ne trebaš brisati integraciju ni ponovno stvarati profil. Novi `switch`, `select` i `number` entiteti dodaju se pri pokretanju. Kod ručne instalacije zamijeni mapu integracije sadržajem novog ZIP-a.
 
 ### Dodavanje posebnog dashboarda
 
@@ -51,7 +51,8 @@ Kartica također može stajati na bilo kojem postojećem dashboardu; ne mora bit
 ### Što se podešava na kartici
 
 - Uključeno/isključeno, ručni/automatski način i ručni efekt.
-- **Uredi postavke za efekt**: zasebna brzina, veličina, gustoća, neprozirnost i vjetar za odabrani efekt.
+- **Uredi postavke za efekt**: zasebna brzina, veličina, gustoća, neprozirnost i vjetar za odabrani efekt, uz tri dodatna klizača položaja/raspršenosti ako efekt sadrži oblake.
+- **Općenito → Upravitelj imenovanih vizualnih postavki**: spremanje, učitavanje, brisanje, preimenovanje i nepromjenjive tvorničke postavke.
 - Prilagodba vremenskim podacima i prag prikaza vrućine.
 - Na tabu **Grmljavina**: izričito uključivanje efekata munja, zasebna munja/bljesak, vrijeme nastajanja, trajanje nestajanja, grananje, debljina, sjaj, doseg, razmak i jačina bljeska.
 - Pomak satne prognoze, najviše FPS i poštivanje smanjenog kretanja.
@@ -75,9 +76,9 @@ Na uskom zaslonu tabovi su vodoravno pomični. Tipkovnica: strelice lijevo/desno
 
 ### Standardni HA entiteti i vlastiti raspored
 
-Na uređaju profila pronaći ćeš šest `switch` entiteta (uključivanje, smanjeno kretanje, prilagodba vremenu, glavni prekidač munja, vidljiva munja i bljesak zaslona), tri `select` entiteta (način, ručni efekt i cilj uređivanja), šesnaest `number` entiteta (pet za izgled, pomak, FPS, prag vrućine i osam parametara munje) te postojeći statusni senzor. HA dodjeljuje ID-eve; kartica ih pronalazi preko registra, pa radi i nakon preimenovanja.
+Na uređaju profila pronaći ćeš šest `switch` entiteta (uključivanje, smanjeno kretanje, prilagodba vremenu, glavni prekidač munja, vidljiva munja i bljesak zaslona), tri `select` entiteta (način, ručni efekt i cilj uređivanja), devetnaest `number` entiteta (pet za osnovni izgled, tri za oblake, pomak, FPS, prag vrućine i osam parametara munje) te postojeći statusni senzor. HA dodjeljuje ID-eve; kartica ih pronalazi preko registra, pa radi i nakon preimenovanja.
 
-Ako želiš vlastiti raspored, dodaj te entitete kroz standardnu HA **Entities** ili **Tile** karticu. Mogu se koristiti i u automatizacijama. Kontrolna kartica koristi standardne `switch`, `select` i `number` akcije, s redovnim HA dozvolama korisnika.
+Ako želiš vlastiti raspored, dodaj te entitete kroz standardnu HA **Entities** ili **Tile** karticu. Mogu se koristiti i u automatizacijama. Klizači i prekidači kontrolne kartice koriste standardne `switch`, `select` i `number` akcije, s redovnim HA dozvolama korisnika. Upravitelj imenovanih preseta koristi zaseban autentificirani WebSocket poziv i traži administratora; provjera dozvole provodi se i na poslužitelju.
 
 Ako kartice nema u pretrazi, prvo provjeri da je integracija učitana, restartaj HA i potpuno osvježi/ponovno otvori klijent. Prikaz, editor i HACS ažuriranje još treba potvrditi na stvarnoj HA instanci.
 
@@ -96,6 +97,45 @@ Stare spremljene vrijednosti se ne brišu: služe kao početne vrijednosti za ef
 Kartica odvojeno prikazuje spremljenu osnovu i trenutačno primijenjene vrijednosti. Automatska prilagodba nikad ne prepisuje spremljene profile.
 
 **Više klijenata i automatizacije:** nativni cilj uređivanja je zajednički za cijeli profil, nije zaseban po pregledniku. Prvo postavi `select` cilja, zatim odgovarajući `number`. Kartica odbija završetak povlačenja ako je u međuvremenu primijetila promjenu cilja s drugog klijenta. To je provjera prije slanja, ne atomska transakcija između više HA servisnih poziva; izbjegni paralelno uređivanje istog profila iz više klijenata/automatizacija.
+
+## Imenovani vizualni preseti i tvorničke postavke (novo u 0.6.0)
+
+Automatsko spremanje klizača i dalje radi kao prije. Novi imenovani preseti dodatno spremaju **snimku svih spremljenih vizualnih postavki profila**: osam parametara izgleda za svaki efekt, ručni efekt/cilj uređivanja, prilagodbu vremenu, prag vrućine, FPS, smanjeno kretanje i parametre munje. Spremaju se osnovne postavke, ne trenutačni vremenski multiplikatori ili točne pozicije animiranih čestica.
+
+Na tabu **Općenito**:
+
+1. Za novi preset odaberi novu/praznu stavku u popisu, upiši naziv i klikni **Spremi**.
+2. Za vraćanje odaberi spremljeni naziv → **Učitaj** → potvrdi.
+3. Za nadogradnju postojećeg odaberi ga, podesi izgled i klikni **Spremi**; prepisivanje traži potvrdu.
+4. Za promjenu naziva upiši novi naziv i klikni **Preimenuj**. Time se ne mijenja spremljeni izgled.
+5. **Izbriši** traži potvrdu i briše samo spremljenu snimku, ne trenutačni izgled.
+6. **Tvorničke postavke** traže potvrdu i vraćaju ugrađeni vizualni izgled za sve efekte. Ne mogu se preimenovati ni izbrisati i ne brišu tvoje imenovane presete.
+
+Do 20 imenovanih preseta po profilu; nazivi imaju 1–50 znakova, bez kontrolnih znakova i duplikata neovisno o velikim/malim slovima. Sve se čuva u HA config-entry postavkama, **ne samo u memoriji preglednika**, pa ostaje nakon restarta. Odabir stavke popisa sam po sebi ništa ne učitava. Brisanje ili promjena naziva ne mijenja odabrane dashboarde ni trenutačni vizualni izgled.
+
+**Učitavanje i tvornički reset ne mijenjaju** naziv/povezivanje integracije, weather entitet, dashboarde, uvjetni prekidač, ručni/automatski način, prognozni pomak ni glavni prekidač svih efekata. U ručnom načinu spremljeni ručni efekt može promijeniti prikazani efekt. Postojeća vremenska prilagodba i dalje utječe na rezultat u automatskom načinu.
+
+**Glavni pristanak za munje nikad se ne sprema u preset. Učitavanje ili tvornički reset uvijek ga isključuju**, čak i ako je trenutačno uključen. Za ponovno prikazivanje moraš ga izričito uključiti na Grmljavini. Gašenje se objavljuje odmah, ne čeka završetak zahtjeva satne prognoze; zakašnjeli odgovor prognoze ne može ponovno uključiti stari pristanak.
+
+Upravitelj traži HA administratorski račun. Bez njega su njegove akcije zaključane s objašnjenjem; redovne kontrole i dalje slijede HA dozvole. Poslužitelj provjerava ovlasti prije traženja profila. Preglednicima se šalju samo ID/naziv preseta, ne sadržaj spremljene snimke. Potvrde se traže za učitavanje, prepisivanje, brisanje i tvornički reset.
+
+## Položaj i raspršenost oblaka (novo u 0.6.0)
+
+Na tabu **Oblaci**, kao i kod svake kombinacije koja sadrži oblake, dostupni su:
+
+| Postavka | Raspon · zadano | Značenje |
+| --- | --- | --- |
+| Gornja središta oblaka | 0–100% · 10% | Najviša dopuštena središta oblaka; 0 je vrh zaslona |
+| Donja središta oblaka | 0–100% · 30% | Najniža dopuštena središta; 100 je dno zaslona |
+| Razmak oblaka | 0–100% · 80% | 0 daje slučajan raspored, 100 snažnije raspoređuje i usklađuje kretanje |
+
+Sve tri vrijednosti spremaju se **zasebno za točno odabrani efekt** i ulaze u imenovane presete. Primjer: Kiša i oblaci može ostati pri vrhu, a Oblaci se mogu protezati do 90% visine. Čista kiša/snijeg/sunce/vjetar/noć bez oblaka te magla nemaju taj odjeljak. Broj oblaka i dalje podešava **Gustoća**, a dimenzije **Veličina**.
+
+Za oblake preko gotovo cijelog zaslona probaj **gornja granica 10%, donja 90%, razmak 90–100%**. Ako želiš cijeli pojas pri dnu, npr. **60–90%**, najprije povećaj donju granicu. Gornja ne može biti veća od donje; jednakost daje jedan vodoravni pojas.
+
+Granice se odnose na **središta**, ne rubove sličica: tijelo oblaka može izlaziti iz pojasa ili preko ruba zaslona. Pri većem razmaku koristi se ograničena početna optimizacija rasporeda i usklađenije vodoravno kretanje, bez ponovnog kvadratnog računanja na svakom kadru. Oblaci se **manje preklapaju**, ali vrlo velika veličina/gustoća ili jako uzak pojas ne mogu jamčiti raspored bez preklapanja. Smanji veličinu/gustoću ili proširi pojas po potrebi. Izgled kumulusa, prilagodba naoblaci i ukupni budžet čestica ostaju sačuvani; magla ostaje zaseban efekt.
+
+Stare verzije nemaju te ključeve pa se bez brisanja postojećih postavki primjenjuju početne vrijednosti 10/30/80. U općoj formi **Konfiguriraj** podešavaju se naslijeđene početne vrijednosti za efekte bez vlastitog zapisa, ne već spremljeni posebni izgled.
 
 ## Prilagodba intenziteta vremenu
 

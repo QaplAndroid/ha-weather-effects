@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 // HA serves an ES module, without requiring a package.json in the integration.
 const source = await readFile(new URL('../custom_components/weather_effects/frontend/weather-effects.js', import.meta.url), 'utf8');
-const { normalizeDashboard, normalizeConfig, effectLayers, matchesDashboard, activeConfigs, WeatherEffectsOverlay, MAX_PARTICLES, EFFECTS, scenePrimitiveCount, allocateBudget, cloudSilhouette, LightningScheduler, LightningGeometry, lightningStage, lightningEligible } =
+const { normalizeDashboard, normalizeConfig, effectLayers, matchesDashboard, activeConfigs, WeatherEffectsOverlay, MAX_PARTICLES, EFFECTS, scenePrimitiveCount, allocateBudget, cloudSilhouette, layoutClouds, cloudOverlap, LightningScheduler, LightningGeometry, lightningStage, lightningEligible } =
   await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 const config = (extra = {}) => normalizeConfig({ id: 'test', enabled: true, dashboards: ['lovelace', 'dashboard-home'], effect: 'snow', ...extra });
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
@@ -74,6 +74,114 @@ function mockEnvironment() {
   };
   return { win, doc, context, canvases, raf, intervals, motion, connection, tick };
 }
+
+const seededCloudRandom = (initial = 42) => {
+  let seed = initial;
+  return () => { seed = seed * 16807 % 2147483647; return seed / 2147483647; };
+};
+const overlapScore = (clouds, width) => {
+  const period = width + Math.max(0, ...clouds.map(p => 320 * p.scale));
+  let total = 0;
+  for (let i = 0; i < clouds.length; i++) for (let j = 0; j < i; j++) total += cloudOverlap(clouds[i], clouds[j], period);
+  return total / Math.max(1, clouds.length * (clouds.length - 1) / 2);
+};
+
+test('cloud bounds and spread normalize finite flat effective values independently of intensity/presets', () => {
+  assert.deepEqual([config().cloud_top, config().cloud_bottom, config().cloud_spread], [10, 30, 80]);
+  for (const [key, fallback] of [['cloud_top', 10], ['cloud_bottom', 30], ['cloud_spread', 80]]) {
+    for (const value of [NaN, Infinity, -Infinity, '50', null]) assert.equal(config({[key]: value})[key], fallback);
+  }
+  const low = config({effect: 'clouds', cloud_top: -10, cloud_bottom: 110, cloud_spread: -10});
+  assert.deepEqual([low.cloud_top, low.cloud_bottom, low.cloud_spread], [0, 100, 0]);
+  const reversed = config({cloud_top: 90, cloud_bottom: 20, cloud_spread: 110});
+  assert.deepEqual([reversed.cloud_top, reversed.cloud_bottom, reversed.cloud_spread], [20, 90, 100]);
+  const storm = config({effect: 'storm', cloud_top: 60, cloud_bottom: 80, cloud_spread: 25, intensity: {cloud: 1, cloud_top: 0}});
+  assert.deepEqual([storm.cloud_top, storm.cloud_bottom, storm.cloud_spread], [60, 80, 25]);
+  assert.deepEqual([low.cloud_top, low.cloud_bottom, low.cloud_spread], [0, 100, 0]);
+});
+
+test('cloud layout keeps centers in low/high/extreme bands, deterministic and bounded at tiny/high density', () => {
+  const input = Array.from({length: 80}, (_, i) => ({scale: 0.65 + i % 4 * 0.2, depth: 0.5}));
+  for (const width of [1, 1200]) for (const height of [1, 800]) {
+    for (const [top, bottom] of [[0, 0], [0, 10], [85, 100], [100, 100], [30, 30], [0, 100]]) {
+      for (const spread of [0, 100]) {
+        const c = config({cloud_top: top, cloud_bottom: bottom, cloud_spread: spread});
+        const points = layoutClouds(input, width, height, c, seededCloudRandom());
+        assert.deepEqual(points, layoutClouds(input, width, height, c, seededCloudRandom()));
+        assert.equal(points.length, input.length);
+        for (const p of points) {
+          assert.ok(Number.isFinite(p.x + p.y)); assert.ok(p.x >= 0 && p.x <= width);
+          assert.ok(p.y >= height * top / 100 - 1e-9 && p.y <= height * bottom / 100 + 1e-9);
+        }
+      }
+    }
+  }
+  assert.equal(input[0].x, undefined, 'pure helper does not mutate source particles');
+  assert.deepEqual(layoutClouds([], 1, 1, config(), seededCloudRandom()), []);
+});
+
+test('full spread measurably reduces normalized render-box overlap across fixed RNG seeds', () => {
+  const input = Array.from({length: 12}, (_, i) => ({scale: 0.7 + i % 3 * 0.2}));
+  let clustered = 0, distributed = 0;
+  for (let seed = 1; seed <= 30; seed++) {
+    const natural = layoutClouds(input, 1600, 900, config({cloud_top: 10, cloud_bottom: 70, cloud_spread: 0}), seededCloudRandom(seed));
+    const spread = layoutClouds(input, 1600, 900, config({cloud_top: 10, cloud_bottom: 70, cloud_spread: 100}), seededCloudRandom(seed));
+    clustered += overlapScore(natural, 1600); distributed += overlapScore(spread, 1600);
+    assert.ok(overlapScore(spread, 1600) <= overlapScore(natural, 1600) + 1e-9);
+  }
+  assert.ok(distributed < clustered * 0.35, `${distributed} vs ${clustered}`);
+});
+
+test('cloud controls rebuild scenes, metadata retains continuity, full spread preserves drift spacing and band centers', async () => {
+  const env = mockEnvironment(), conn = env.connection(); env.doc.root = {hass: {connection: conn}};
+  const overlay = new WeatherEffectsOverlay(env.win, env.doc).start(); await flush();
+  let c = config({effect: 'clouds', density: 200, cloud_top: 60, cloud_bottom: 90, cloud_spread: 100});
+  conn.callback([c]);
+  for (const key of ['cloud_top', 'cloud_bottom', 'cloud_spread']) {
+    const scenes = overlay.scenes;
+    c = {...c, [key]: c[key] - 5}; conn.callback([c]);
+    assert.notEqual(overlay.scenes, scenes, key);
+  }
+  const scenes = overlay.scenes, particles = scenes[0].clouds;
+  conn.callback([{...c, id: 'renamed', title: 'metadata only'}]);
+  assert.equal(overlay.scenes, scenes); assert.equal(overlay.scenes[0].clouds, particles);
+  c = {...c, cloud_top: 100, cloud_bottom: 100, cloud_spread: 100}; conn.callback([c]);
+  const scene = overlay.scenes[0], before = overlapScore(scene.clouds, overlay.width);
+  const allocations = env.canvases.length;
+  const centers = []; overlay.image = (name, x, y) => centers.push([x, y]);
+  for (let frame = 0; frame < 500; frame++) overlay.drawClouds(scene, 0.1);
+  assert.ok(centers.every(([x, y]) => Number.isFinite(x) && y === overlay.height));
+  assert.ok(Math.abs(overlapScore(scene.clouds, overlay.width) - before) < 1e-10);
+  assert.equal(env.canvases.length, allocations);
+  assert.doesNotMatch(WeatherEffectsOverlay.prototype.drawClouds.toString(), /layoutClouds|cloudOverlap|createElement|\.map\(/);
+  overlay.stop();
+});
+
+test('cloud placement controls leave fog banks, fog rendering and cloud intensity counts independent', async () => {
+  const env = mockEnvironment(), conn = env.connection(); env.doc.root = {hass: {connection: conn}};
+  const overlay = new WeatherEffectsOverlay(env.win, env.doc).start(); await flush();
+  const originalRandom = Math.random;
+  try {
+    const fog = extra => {
+      Math.random = seededCloudRandom(73);
+      conn.callback([config({effect: 'fog', ...extra})]);
+      return overlay.scenes[0];
+    };
+    const a = fog({cloud_top: 0, cloud_bottom: 0, cloud_spread: 0});
+    const b = fog({cloud_top: 100, cloud_bottom: 100, cloud_spread: 100});
+    assert.deepEqual(a.fog, b.fog); assert.equal(a.clouds.length, 0);
+    const draws = []; overlay.image = (...args) => draws.push(args);
+    overlay.drawFog(a, 0.1); const before = [...draws]; draws.length = 0;
+    overlay.drawFog(b, 0.1); assert.deepEqual(draws, before);
+    for (const intensity of [0, 1]) {
+      conn.callback([config({effect: 'clouds', density: 200, intensity: {cloud: intensity}, cloud_spread: 0})]);
+      const count = overlay.scenes[0].clouds.length;
+      conn.callback([config({effect: 'clouds', density: 200, intensity: {cloud: intensity}, cloud_top: 100, cloud_bottom: 100, cloud_spread: 100})]);
+      assert.equal(overlay.scenes[0].clouds.length, count);
+      assert.equal(count, Math.ceil(200 / 22 * (0.35 + 1.65 * intensity)));
+    }
+  } finally { Math.random = originalRandom; overlay.stop(); }
+});
 
 test('new lightning controls retain strict master opt-in, old-profile migration and hard bounds', () => {
   const defaults = {lightning_bolt_enabled: true, lightning_flash_enabled: true,

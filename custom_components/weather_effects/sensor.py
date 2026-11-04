@@ -35,4 +35,5 @@ class WeatherEffectsStatus(CoordinatorEntity, SensorEntity):
         return {key: self.coordinator.data.get(key) for key in (
             "enabled", "mode", "source", "condition", "forecast_offset", "forecast_time",
             "status", "weather_entity", "dashboards", "settings_effect", "preset", "intensity",
-            "weather_metrics", "adaptive_weather", *LIGHTNING_CONTROLS)}
+            "weather_metrics", "adaptive_weather", "cloud_top", "cloud_bottom", "cloud_spread",
+            "saved_presets", *LIGHTNING_CONTROLS)}

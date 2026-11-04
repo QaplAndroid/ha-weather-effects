@@ -14,6 +14,7 @@ LABELS = {
         "enable_entity": "Optional enable switch", "forecast_offset": "Forecast offset",
         "speed": "Speed multiplier", "size": "Size multiplier", "density": "Particle count / cloud density",
         "opacity": "Opacity", "wind": "Wind (negative = left)",
+        "cloud_top": "Top of cloud-center band (%)", "cloud_bottom": "Bottom of cloud-center band (%)", "cloud_spread": "Cloud spread (%)",
         "respect_reduced_motion": "Respect device reduced-motion preference", "max_fps": "Maximum frames per second",
         "settings_effect": "Edit settings for effect", "adaptive_weather": "Adapt intensity to weather data",
         "heat_threshold": "Heat threshold (°C)", "lightning_enabled": "Enable lightning effects (photosensitivity warning)",
@@ -29,6 +30,7 @@ LABELS = {
         "enable_entity": "Neobavezni prekidač za uključivanje", "forecast_offset": "Pomak prognoze u budućnost",
         "speed": "Brzina (množitelj)", "size": "Veličina (množitelj)", "density": "Broj čestica / gustoća oblaka",
         "opacity": "Neprozirnost", "wind": "Vjetar (negativno = ulijevo)",
+        "cloud_top": "Gornja granica središta oblaka (%)", "cloud_bottom": "Donja granica središta oblaka (%)", "cloud_spread": "Raspršenost oblaka (%)",
         "respect_reduced_motion": "Poštuj postavku smanjenog kretanja uređaja", "max_fps": "Najveći broj sličica u sekundi",
         "settings_effect": "Uredi postavke efekta", "adaptive_weather": "Prilagodi intenzitet vremenskim podacima",
         "heat_threshold": "Prag vrućine (°C)", "lightning_enabled": "Uključi efekte munja (upozorenje na fotosenzitivnost)",
@@ -46,6 +48,9 @@ DESCRIPTIONS = {
         "enable_entity": "Optional: select input_boolean.christmasmode or another switch. Effects run only while it is on. Clear this field to stop using it.",
         "forecast_offset": "0 = current conditions; +1 to +72 = nearest hourly forecast. Outside forecast coverage or on errors, fall back to current conditions (see diagnostic sensor).",
         "effect": "Used in manual mode only. Automatic mode chooses effects from the weather entity.",
+        "cloud_top": "Default cloud-center upper limit (0 = top of screen). Per-effect overrides are on the card. Must not exceed the lower limit; sprites may extend beyond the center band.",
+        "cloud_bottom": "Default cloud-center lower limit (100 = bottom of screen). Raise this first to allow clouds lower down. Must be at least the upper limit.",
+        "cloud_spread": "Default spacing: 0 = random placement, 100 = stronger distribution and coherent drift. Very large/dense clouds can still overlap. Fog is separate.",
         "respect_reduced_motion": "Pause effects if your device requests reduced motion. Lightning is ALWAYS disabled by reduced motion, even if this switch is off.",
         "adaptive_weather": "Automatic mode only: adapt to available temperature, cloud coverage, rainfall and wind. Missing values keep the saved preset; rainfall may be an hourly forecast estimate.",
         "heat_threshold": "Above this Celsius temperature, sunny effects gain a warmer glow and subtle heat haze.",
@@ -68,6 +73,9 @@ DESCRIPTIONS = {
         "enable_entity": "Neobavezno: odaberi input_boolean.christmasmode ili drugi prekidač. Efekti tada rade samo dok je uključen. Isprazni polje za uklanjanje uvjeta.",
         "forecast_offset": "0 = trenutačno vrijeme; +1 do +72 = najbliža satna prognoza. Izvan raspona prognoze ili kod greške koristi se trenutačno stanje (vidi dijagnostički senzor).",
         "effect": "Koristi se samo u ručnom načinu. Automatski način bira efekt prema vremenskom entitetu.",
+        "cloud_top": "Početna gornja granica središta oblaka (0 = vrh zaslona). Posebne vrijednosti uređuju se na kartici. Ne smije prijeći donju granicu; rubovi oblaka mogu izlaziti izvan pojasa središta.",
+        "cloud_bottom": "Početna donja granica središta oblaka (100 = dno zaslona). Najprije povećaj ovu vrijednost za oblake niže na zaslonu. Mora biti barem kao gornja granica.",
+        "cloud_spread": "Početni raspored: 0 = slučajno, 100 = jače raspoređivanje i usklađeno kretanje. Vrlo veliki/gusti oblaci i dalje se mogu preklapati. Magla je zasebna.",
         "respect_reduced_motion": "Zaustavi efekte ako uređaj traži smanjeno kretanje. Munje su UVIJEK isključene uz smanjeno kretanje, čak i ako je ovaj prekidač isključen.",
         "adaptive_weather": "Samo automatski način: koristi dostupnu temperaturu, naoblaku, oborinu i vjetar. Za nedostupne vrijednosti ostaje spremljeni profil; oborina može biti procjena satne prognoze.",
         "heat_threshold": "Iznad ove temperature u °C sunčani efekti dobivaju topliji sjaj i blago titranje vrućine.",
@@ -86,8 +94,8 @@ DESCRIPTIONS = {
     },
 }
 ERRORS = {
-    "en": {"dashboard_required": "Select at least one dashboard.", "invalid_dashboard": "Enter a dashboard URL path, not a full URL, view path or settings panel.", "name_required": "Enter a profile name.", "weather_required": "Select a weather entity for automatic mode.", "entity_missing": "This entity does not exist or has the wrong domain.", "invalid_number": "Enter a finite number within the allowed range and step.", "invalid_boolean": "Choose an on/off value."},
-    "hr": {"dashboard_required": "Odaberi barem jedan dashboard.", "invalid_dashboard": "Upiši URL put dashboarda, ne punu adresu, prikaz ili stranicu postavki.", "name_required": "Upiši naziv profila.", "weather_required": "Odaberi weather entitet za automatski način.", "entity_missing": "Entitet ne postoji ili nije odgovarajuće vrste.", "invalid_number": "Upiši konačan broj unutar dopuštenog raspona i koraka.", "invalid_boolean": "Odaberi uključeno ili isključeno."},
+    "en": {"dashboard_required": "Select at least one dashboard.", "invalid_dashboard": "Enter a dashboard URL path, not a full URL, view path or settings panel.", "name_required": "Enter a profile name.", "weather_required": "Select a weather entity for automatic mode.", "entity_missing": "This entity does not exist or has the wrong domain.", "invalid_number": "Enter a finite number within the allowed range and step.", "invalid_boolean": "Choose an on/off value.", "invalid_cloud_bounds": "The top cloud-center limit must not exceed the bottom limit."},
+    "hr": {"dashboard_required": "Odaberi barem jedan dashboard.", "invalid_dashboard": "Upiši URL put dashboarda, ne punu adresu, prikaz ili stranicu postavki.", "name_required": "Upiši naziv profila.", "weather_required": "Odaberi weather entitet za automatski način.", "entity_missing": "Entitet ne postoji ili nije odgovarajuće vrste.", "invalid_number": "Upiši konačan broj unutar dopuštenog raspona i koraka.", "invalid_boolean": "Odaberi uključeno ili isključeno.", "invalid_cloud_bounds": "Gornja granica središta oblaka ne smije prijeći donju granicu."},
 }
 
 

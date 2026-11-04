@@ -35,6 +35,9 @@ class MockedCoordinator:
         self.update_interval = update_interval
         self.data = None
 
+    def async_set_updated_data(self, data):
+        self.data = data
+
     async def async_refresh(self):
         self.data = await self._async_update_data()
 
@@ -97,7 +100,7 @@ def load_backend():
         Required=MockedMarker, Optional=MockedMarker, Schema=lambda fields: fields))
     loaded = {}
     with patch.dict(sys.modules, stubs):
-        for name in ("const", "logic", "presets", "intensity", "coordinator", "config_flow"):
+        for name in ("const", "logic", "presets", "named_presets", "intensity", "coordinator", "config_flow"):
             full_name = PACKAGE + "." + name
             spec = importlib.util.spec_from_file_location(full_name, BACKEND / (name + ".py"))
             value = importlib.util.module_from_spec(spec)
@@ -443,6 +446,16 @@ class ConfigFlowTests(unittest.IsolatedAsyncioTestCase):
         self.hass.data["panels"] = {"wall": SimpleNamespace(component_name="lovelace", sidebar_title="Wall"), "config": SimpleNamespace(component_name="config", sidebar_title="Settings")}
         self.assertEqual(choices(), [{"value": "wall", "label": "Wall (/wall)"}])
 
+    def test_cloud_schema_percent_defaults_steps_and_cross_bounds(self):
+        fields = {key.key: (key, value) for key, value in backend.config_flow.schema(self.hass, {}).items()}
+        for key, default in (("cloud_top", 10), ("cloud_bottom", 30), ("cloud_spread", 80)):
+            marker, selector = fields[key]
+            self.assertEqual(marker.kwargs["default"], default)
+            self.assertEqual(selector.config, {"min": 0, "max": 100, "step": 5, "mode": "slider", "unit_of_measurement": "%"})
+            self.assertEqual(backend.const.NUMBER_UNITS[key], "%")
+        self.assertEqual(backend.config_flow.validate(self.hass, self.data(cloud_top=35, cloud_bottom=30))["cloud_top"], "invalid_cloud_bounds")
+        self.assertNotIn("cloud_top", backend.config_flow.validate(self.hass, self.data(cloud_top=30, cloud_bottom=30)))
+
     def test_lightning_schema_exact_bounds_defaults_units_and_saved_values(self):
         expected = {
             "lightning_interval": ((5, 60, 1), 12, "s"),
@@ -476,7 +489,8 @@ class ConfigFlowTests(unittest.IsolatedAsyncioTestCase):
                 with self.subTest(key=key, value=value):
                     self.assertEqual(backend.config_flow.validate(self.hass, self.data(**{key: value}))[key], "invalid_number")
             for value in (low, high, low + step):
-                self.assertNotIn(key, backend.config_flow.validate(self.hass, self.data(**{key: value})))
+                companion = {"cloud_bottom": 100} if key == "cloud_top" else ({"cloud_top": 0} if key == "cloud_bottom" else {})
+                self.assertNotIn(key, backend.config_flow.validate(self.hass, self.data(**companion, **{key: value})))
         for key in backend.const.SWITCH_CONTROLS:
             for value in (0, 1, "false", None, [], {}):
                 self.assertEqual(backend.config_flow.validate(self.hass, self.data(**{key: value}))[key], "invalid_boolean")

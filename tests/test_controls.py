@@ -127,6 +127,12 @@ class ControlsTests(unittest.IsolatedAsyncioTestCase):
     async def test_all_numeric_boundaries_and_valid_steps(self):
         for key, (low, high, step) in backend.const.NUMBER_CONTROLS.items():
             for value in (low, high, low + step):
+                # Cross-boundary cloud controls still accept their whole domain
+                # when the companion edge permits it.
+                if key == "cloud_top":
+                    await self.coordinator.async_set_control("cloud_bottom", 100)
+                elif key == "cloud_bottom":
+                    await self.coordinator.async_set_control("cloud_top", 0)
                 await self.coordinator.async_set_control(key, value)
                 self.assertAlmostEqual(backend.presets.configured_control_value(self.entry.options or self.entry.data, key), value)
         await self.coordinator.async_set_control("wind", 0.1 + 0.2)
@@ -192,11 +198,20 @@ class ControlsTests(unittest.IsolatedAsyncioTestCase):
         await self.coordinator.async_set_control("settings_effect", "rain")
         await self.coordinator.async_set_control("speed", 2.4)
         await self.coordinator.async_set_control("opacity", .4)
+        await self.coordinator.async_set_control("cloud_top", 20)
+        await self.coordinator.async_set_control("cloud_bottom", 40)
+        await self.coordinator.async_set_control("cloud_spread", 70)
+        self.assertEqual(controls["cloud_top"].native_value, 20)
+        self.assertEqual(controls["cloud_bottom"].native_value, 40)
+        self.assertEqual(controls["cloud_spread"].native_value, 70)
         self.coordinator.data = {"effect": "snow", "speed": 3, "opacity": 1}
         self.assertEqual(controls["speed"].native_value, 2.4)
         self.assertEqual(controls["opacity"].native_value, .4)
         await self.coordinator.async_set_control("settings_effect", "sun")
         self.assertEqual(controls["speed"].native_value, 1)
+        self.assertEqual(controls["cloud_top"].native_value, 10)
+        self.assertEqual(controls["cloud_bottom"].native_value, 30)
+        self.assertEqual(controls["cloud_spread"].native_value, 80)
         await self.coordinator.async_set_control("speed", 1.8)
         self.assertEqual(controls["speed"].native_value, 1.8)
         await self.coordinator.async_set_control("settings_effect", "rain")

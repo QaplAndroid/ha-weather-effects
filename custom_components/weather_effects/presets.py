@@ -3,14 +3,16 @@
 Flat appearance fields remain legacy/default fallbacks. Merely reading an old
 entry never materializes presets or changes the stored edit target.
 """
+from copy import deepcopy
+
 from .const import DEFAULTS, EFFECTS
 
-APPEARANCE_KEYS = ("speed", "size", "density", "opacity", "wind")
+APPEARANCE_KEYS = ("speed", "size", "density", "opacity", "wind", "cloud_top", "cloud_bottom", "cloud_spread")
 
 
 def configured_settings(entry):
     """Return defaults plus authoritative options (or data before first save)."""
-    return {**DEFAULTS, **(entry.options or entry.data)}
+    return deepcopy({**DEFAULTS, **(entry.options or entry.data)})
 
 
 def editing_effect(settings):
@@ -20,7 +22,7 @@ def editing_effect(settings):
 
 
 def effect_preset(settings, effect):
-    """Resolve five base values for effect, without changing settings."""
+    """Resolve eight base values for effect, without changing settings."""
     presets = settings.get("effect_settings", {})
     preset = presets.get(effect, {}) if isinstance(presets, dict) else {}
     if not isinstance(preset, dict):

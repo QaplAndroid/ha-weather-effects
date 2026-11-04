@@ -14,6 +14,7 @@ from .const import CONTROL_KEYS, DOMAIN, LIGHTNING_CONTROLS, NUMBER_CONTROLS, SE
 from .logic import select_weather, parse_time
 from .presets import APPEARANCE_KEYS, configured_settings, configured_control_value, editing_effect, effect_preset
 from .intensity import adapt, weather_metrics, nearest_hourly
+from .named_presets import apply_preset_action, preset_summaries, validate_cloud_bounds
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -90,6 +91,8 @@ class WeatherEffectsCoordinator(DataUpdateCoordinator):
             if configured_control_value(options, key) == value and (
                 key != "effect" or editing_effect(options) == value
             ):
+                if key == "lightning_enabled" and value is False:
+                    self._publish_lightning_off()
                 return
             if key in APPEARANCE_KEYS:
                 target = editing_effect(options)
@@ -98,11 +101,35 @@ class WeatherEffectsCoordinator(DataUpdateCoordinator):
                 previous = presets.get(target)
                 presets[target] = {**(previous if isinstance(previous, dict) else {}), key: value}
                 options["effect_settings"] = presets
+                if key in ("cloud_top", "cloud_bottom"):
+                    try:
+                        validate_cloud_bounds(effect_preset(options, target))
+                    except ValueError as err:
+                        raise HomeAssistantError(str(err)) from err
             else:
                 options[key] = value
                 if key == "effect":
                     options["settings_effect"] = value
             self.hass.config_entries.async_update_entry(self.entry, options=options)
+            if key == "lightning_enabled" and value is False:
+                self._publish_lightning_off()
+
+    @callback
+    def _publish_lightning_off(self):
+        """Stop flashes immediately, even if the options listener awaits weather."""
+        if isinstance(self.data, dict) and self.data.get("lightning_enabled"):
+            self.async_set_updated_data({**self.data, "lightning_enabled": False})
+
+    async def async_preset_action(self, action, preset_id=None, name=None, overwrite=False):
+        """Persist one atomic named-library operation; listener owns weather refresh."""
+        async with self._control_lock:
+            current = configured_settings(self.entry)
+            options, response = apply_preset_action(current, action, preset_id, name, overwrite)
+            if options != current:
+                self.hass.config_entries.async_update_entry(self.entry, options=options)
+            if action in ("load", "factory_reset"):
+                self._publish_lightning_off()
+            return response
 
     async def reconfigure(self):
         """Apply the latest options once, preserving unrelated forecast caches."""
@@ -177,6 +204,7 @@ class WeatherEffectsCoordinator(DataUpdateCoordinator):
         effective, intensity = adapt(preset, effect, metrics, adaptive, cfg["heat_threshold"])
         if gate_id and (gate is None or gate.state in {"unknown", "unavailable"}):
             status = "enable_entity_unavailable"
+        latest = configured_settings(self.entry)
         return {
             "id": self.entry.entry_id,
             "name": cfg.get("name", self.entry.title),
@@ -185,8 +213,11 @@ class WeatherEffectsCoordinator(DataUpdateCoordinator):
             "effect": effect if enabled else "off",
             **effective,
             "settings_effect": editing_effect(cfg), "preset": preset,
+            "saved_presets": preset_summaries(latest),
             "intensity": intensity, "weather_metrics": metrics,
             **{key: cfg[key] for key in ("respect_reduced_motion", "max_fps", "adaptive_weather", "heat_threshold", *LIGHTNING_CONTROLS)},
+            # A forecast already in flight must not republish an old enabled master.
+            "lightning_enabled": bool(cfg["lightning_enabled"] and latest["lightning_enabled"]),
             "mode": cfg["mode"], "source": source, "condition": condition,
             "forecast_time": forecast_time, "forecast_offset": cfg["forecast_offset"],
             "status": status, "weather_entity": entity_id,

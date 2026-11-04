@@ -13,6 +13,13 @@ i = backend.intensity
 
 
 class PresetResolutionTests(unittest.TestCase):
+    def test_eight_appearance_keys_and_old_cloud_defaults(self):
+        self.assertEqual(p.APPEARANCE_KEYS, ("speed", "size", "density", "opacity", "wind", "cloud_top", "cloud_bottom", "cloud_spread"))
+        settings = {"cloud_top": 15, "effect_settings": {"clouds": {"cloud_spread": 50}}}
+        self.assertEqual({key: p.effect_preset(settings, "clouds")[key] for key in ("cloud_top", "cloud_bottom", "cloud_spread")},
+                         {"cloud_top": 15, "cloud_bottom": 30, "cloud_spread": 50})
+        self.assertEqual(p.effect_preset({}, "clouds")["cloud_spread"], 80)
+
     def test_legacy_resolution_is_non_destructive_and_effect_independent(self):
         settings = {"effect": "rain", "speed": 2, "density": 90}
         before = deepcopy(settings)
@@ -237,6 +244,48 @@ class PersistenceRuntimeTests(unittest.IsolatedAsyncioTestCase):
         await self.coordinator.async_set_control("opacity", .8)
         self.assertEqual(self.entry.options, before)
         self.hass.config_entries.async_update_entry.assert_not_called()
+
+    async def test_independent_cloud_controls_native_resolution_runtime_and_cross_bounds(self):
+        before = deepcopy(self.entry.data)
+        for effect, top, bottom, spread in (("clouds", 15, 25, 50), ("storm_clouds", 30, 30, 100)):
+            await self.coordinator.async_set_control("settings_effect", effect)
+            await self.coordinator.async_set_control("cloud_top", top)
+            await self.coordinator.async_set_control("cloud_bottom", bottom)
+            await self.coordinator.async_set_control("cloud_spread", spread)
+        for effect, top, bottom, spread in (("clouds", 15, 25, 50), ("storm_clouds", 30, 30, 100)):
+            await self.coordinator.async_set_control("effect", effect)
+            restarted = backend.coordinator.WeatherEffectsCoordinator(self.hass, self.entry)
+            runtime = await restarted._async_update_data()
+            for key, expected in (("cloud_top", top), ("cloud_bottom", bottom), ("cloud_spread", spread)):
+                self.assertEqual(p.configured_control_value(self.entry.options, key), expected)
+                self.assertEqual(runtime[key], expected)
+                self.assertEqual(runtime["preset"][key], expected)
+        saved = deepcopy(self.entry.options)
+        for key, value in (("cloud_top", 35), ("cloud_bottom", 25)):
+            with self.assertRaisesRegex(MockedHomeAssistantError, "less than or equal"):
+                await self.coordinator.async_set_control(key, value)
+            self.assertEqual(self.entry.options, saved)
+        self.assertEqual(self.entry.data, before)
+        self.assertEqual(self.entry.options["cloud_top"], 10)
+        self.assertEqual(self.entry.options["cloud_bottom"], 30)
+        self.assertEqual(self.entry.options["cloud_spread"], 80)
+
+    async def test_options_cloud_fallbacks_validate_inherited_edges_and_retain_library(self):
+        self.hass.data = {}
+        flow = backend.config_flow.WeatherEffectsOptionsFlow()
+        flow.hass, flow.config_entry = self.hass, self.entry
+        self.entry.options = {**self.entry.data, "saved_presets": {"a" * 32: {"name": "Saved", "settings": {}}},
+                              "effect_settings": {"clouds": {"cloud_top": 25}}}
+        submitted = {"name": "Changed", "dashboards": ["wall"], "mode": "manual", "cloud_top": 10, "cloud_bottom": 20, "cloud_spread": 50}
+        result = await flow.async_step_init(submitted)
+        self.assertEqual(result["errors"], {"cloud_top": "invalid_cloud_bounds"})
+        submitted["cloud_bottom"] = 25
+        before = deepcopy(self.entry.options)
+        result = await flow.async_step_init(submitted)
+        self.assertEqual(result["data"]["saved_presets"], before["saved_presets"])
+        self.assertIsNot(result["data"]["saved_presets"], self.entry.options["saved_presets"])
+        self.assertEqual(result["data"]["effect_settings"], before["effect_settings"])
+        self.assertEqual(result["data"]["cloud_bottom"], 25)
 
     async def test_automatic_uses_actual_preset_and_current_estimated_rain_cache(self):
         self.coordinator.settings.update(mode="automatic", settings_effect="snow")

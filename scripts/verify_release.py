@@ -54,7 +54,7 @@ with ZipFile(archive) as bundle:
     for required in ("manifest.json", "__init__.py", "config_flow.py", "coordinator.py", "sensor.py",
                      "logic.py", "compat.py", "const.py", "strings.json", "translations/hr.json",
                      "translations/en.json", "frontend/weather-effects.js", "frontend/weather-effects-card.js",
-                     "entity.py", "switch.py", "select.py", "number.py", "presets.py", "intensity.py"):
+                     "entity.py", "switch.py", "select.py", "number.py", "presets.py", "intensity.py", "named_presets.py"):
         assert f"custom_components/weather_effects/{required}" in names, required
     assert "README.md" in names and "LICENSE" in names
     assert not any("__pycache__" in name or name.endswith(".pyc") for name in names)

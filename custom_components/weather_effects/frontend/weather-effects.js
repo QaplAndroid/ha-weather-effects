@@ -53,7 +53,8 @@ const visualSignature = configs => JSON.stringify(configs.map(c =>
   [c.effect, c.speed, c.size, c.density, c.opacity, c.wind, c.max_fps, c.intensity,
     c.lightning_enabled, c.lightning_interval, c.lightning_brightness, c.lightning_bolt_enabled,
     c.lightning_flash_enabled, c.lightning_formation_time, c.lightning_duration, c.lightning_branches,
-    c.lightning_thickness, c.lightning_glow, c.lightning_length]));
+    c.lightning_thickness, c.lightning_glow, c.lightning_length,
+    c.cloud_top, c.cloud_bottom, c.cloud_spread]));
 const BLOCKED_ROUTES = new Set(["config", "settings", "developer-tools", "profile", "auth", "onboarding", "lovelace-editor", "editor", "history", "logbook", "energy", "map", "calendar", "todo", "media-browser"]);
 const clamp = (value, low, high, fallback) => {
   const n = typeof value === "number" ? value : Number.NaN;
@@ -73,7 +74,12 @@ export function effectLayers(effect) {
 }
 export function normalizeConfig(raw) {
   if (!raw || typeof raw !== "object") return null;
+  // Controls describe centers, not sprite edges. Sort malformed incoming bounds;
+  // valid writes are checked by the backend before reaching this defensive path.
+  const top = clamp(raw.cloud_top, 0, 100, 10), bottom = clamp(raw.cloud_bottom, 0, 100, 30);
   return {
+    cloud_top: Math.min(top, bottom), cloud_bottom: Math.max(top, bottom),
+    cloud_spread: clamp(raw.cloud_spread, 0, 100, 80),
     id: String(raw.id ?? ""), enabled: raw.enabled === true,
     dashboards: [...new Set((Array.isArray(raw.dashboards) ? raw.dashboards : []).map(normalizeDashboard).filter(Boolean))],
     effect: Object.prototype.hasOwnProperty.call(EFFECTS, raw.effect) ? raw.effect : "off",
@@ -99,6 +105,57 @@ export function normalizeConfig(raw) {
     lightning_interval: clamp(raw.lightning_interval, 5, 60, 12),
     lightning_brightness: clamp(raw.lightning_brightness, 0.05, 0.25, 0.10),
   };
+}
+// Conservative sprite-box overlap, normalized by the smaller rendered area.
+// A common wrap period keeps spacing coherent as the whole cloud field drifts.
+export function cloudOverlap(a, b, period = 0) {
+  let dx = Math.abs(a.x - b.x);
+  if (period > 0) { dx %= period; dx = Math.min(dx, period - dx); }
+  const aw = 320 * a.scale, bw = 320 * b.scale, ah = 160 * a.scale, bh = 160 * b.scale;
+  const x = Math.max(0, Math.min(aw, bw, (aw + bw) / 2 - dx));
+  const y = Math.max(0, Math.min(ah, bh, (ah + bh) / 2 - Math.abs(a.y - b.y)));
+  return x * y / Math.max(1e-9, Math.min(aw * ah, bw * bh));
+}
+// Pure, deterministic for a supplied RNG. Work is bounded and happens only at
+// scene construction: stratified best-candidate placement plus three relaxation
+// sweeps. Crowded/narrow bands can still overlap; never shrink or drop clouds.
+export function layoutClouds(clouds, width, height, config, random = Math.random) {
+  width = Math.max(1, width); height = Math.max(1, height);
+  const top = height * config.cloud_top / 100, bottom = height * config.cloud_bottom / 100;
+  const spread = config.cloud_spread / 100, band = bottom - top;
+  const result = clouds.map(p => ({ ...p, x: random() * width, y: top + random() * band }));
+  if (!result.length || !spread) return result;
+  const period = width + Math.max(...result.map(p => 320 * p.scale));
+  const natural = result.map(p => ({ x: p.x, y: p.y }));
+  const score = (p, index, end) => {
+    let sum = 0;
+    for (let j = 0; j < end; j++) if (j !== index) {
+      const overlap = cloudOverlap(p, result[j], period);
+      sum += overlap * overlap;
+    }
+    return sum;
+  };
+  for (let pass = 0; pass < 4; pass++) {
+    for (let i = 0; i < result.length; i++) {
+      const p = result[i], end = pass ? result.length : i;
+      let bestX = p.x, bestY = p.y, best = score(p, i, end);
+      const offset = random(), vertical = random();
+      for (let k = 0; k < 32 && best > 0; k++) {
+        // Cover both dimensions even with an adversarial constant RNG. Boundary
+        // candidates help equal/narrow bands and clouds wider than the viewport.
+        p.x = ((k + offset) / 32) * width;
+        p.y = top + (k % 4 === 0 ? 0 : k % 4 === 1 ? 1 : (vertical + k * 0.61803398875) % 1) * band;
+        const candidate = score(p, i, end);
+        if (candidate < best) { best = candidate; bestX = p.x; bestY = p.y; }
+      }
+      p.x = bestX; p.y = bestY;
+    }
+  }
+  for (let i = 0; i < result.length; i++) {
+    result[i].x = natural[i].x + (result[i].x - natural[i].x) * spread;
+    result[i].y = natural[i].y + (result[i].y - natural[i].y) * spread;
+  }
+  return result;
 }
 export function matchesDashboard(config, pathname, search = "") {
   if (!config?.enabled || !effectLayers(config.effect).length) return false;
@@ -435,6 +492,9 @@ export class WeatherEffectsOverlay {
     }
   }
   buildScenes() {
+    // One seed per build, not per candidate or frame.
+    let cloudSeed = 1 + Math.floor(Math.random() * 2147483646);
+    const cloudRandom = () => { cloudSeed = cloudSeed * 16807 % 2147483647; return cloudSeed / 2147483647; };
     const plans = this.active.map(config => {
       const layers = effectLayers(config.effect), d = config.density;
       const rain = layers.includes("rain") || layers.includes("downpour");
@@ -471,7 +531,8 @@ export class WeatherEffectsOverlay {
           life: Math.random(),
         }));
       });
-      for (const cloud of scene.clouds) cloud.y = Math.min(this.height * 0.42, 80 + Math.random() * Math.min(this.height * 0.18, 145));
+      scene.clouds = layoutClouds(scene.clouds, this.width, this.height, config, cloudRandom);
+      scene.cloudPadding = Math.max(0, ...scene.clouds.map(p => 160 * p.scale));
       for (const bank of scene.fog) bank.y = this.height * (0.72 + Math.random() * 0.27);
       for (const star of scene.stars) star.y *= 0.48;
       // Warm only used sprites. The finite key set caps cache size at 13;
@@ -654,13 +715,19 @@ export class WeatherEffectsOverlay {
       ctx.stroke();
     }
   }
-  drawClouds({ config: c, clouds, cloudSprite, time }, dt) {
+  drawClouds({ config: c, clouds, cloudSprite, cloudPadding, time }, dt) {
+    const spread = c.cloud_spread / 100, period = this.width + 2 * cloudPadding;
+    const top = this.height * c.cloud_top / 100, bottom = this.height * c.cloud_bottom / 100;
     for (const p of clouds) {
-      p.x += (5 + c.wind * 14) * c.speed * p.depth * dt;
-      this.wrap(p, 250 * p.scale);
+      // At full spread all centers share one velocity and wrap period: the
+      // build-time spacing cannot immediately collapse through depth parallax.
+      p.x += (5 + c.wind * 14) * c.speed * (p.depth * (1 - spread) + 0.625 * spread) * dt;
+      if (p.x > this.width + cloudPadding || p.x < -cloudPadding)
+        p.x = ((p.x + cloudPadding) % period + period) % period - cloudPadding;
       this.ctx.globalAlpha = c.opacity * (cloudSprite === "darkCloud" ? 0.88 : 0.82) * (0.82 + p.depth * 0.18)
         * (c.intensity.cloud === null ? 1 : 0.75 + 0.25 * c.intensity.cloud);
-      this.image(cloudSprite + p.variant % 2, p.x, p.y + Math.sin(time * 0.14 + p.phase) * 4, 320 * p.scale, 160 * p.scale);
+      const y = Math.min(bottom, Math.max(top, p.y + Math.sin(time * 0.14 + p.phase) * 4 * (1 - spread)));
+      this.image(cloudSprite + p.variant % 2, p.x, y, 320 * p.scale, 160 * p.scale);
     }
   }
   drawFog({ config: c, fog, time }, dt) {

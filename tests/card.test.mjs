@@ -39,11 +39,12 @@ function dom() {
 function fixture() {
   dom();
   const states = {}, controls = {};
-  for (const key of ['enabled', 'respect_reduced_motion', 'adaptive_weather', 'lightning_enabled', 'lightning_bolt_enabled', 'lightning_flash_enabled', 'mode', 'effect', 'settings_effect', 'forecast_offset', 'speed', 'size', 'density', 'opacity', 'wind', 'max_fps', 'heat_threshold', ...Object.keys(lightningNumbers), 'status']) {
+  for (const key of ['enabled', 'respect_reduced_motion', 'adaptive_weather', 'lightning_enabled', 'lightning_bolt_enabled', 'lightning_flash_enabled', 'mode', 'effect', 'settings_effect', 'forecast_offset', 'speed', 'size', 'density', 'opacity', 'wind', 'cloud_top', 'cloud_bottom', 'cloud_spread', 'max_fps', 'heat_threshold', ...Object.keys(lightningNumbers), 'status']) {
     const domain = ['enabled', 'respect_reduced_motion', 'adaptive_weather', 'lightning_enabled', 'lightning_bolt_enabled', 'lightning_flash_enabled'].includes(key) ? 'switch' : ['mode', 'effect', 'settings_effect'].includes(key) ? 'select' : key === 'status' ? 'sensor' : 'number';
     const id = `${domain}.${key}`; controls[key] = id;
     states[id] = { state: domain === 'switch' ? key === 'lightning_enabled' ? 'off' : 'on' : key === 'mode' ? 'manual' : ['effect', 'settings_effect'].includes(key) ? 'rain' : key === 'status' ? 'active' : '1', attributes: { options: key === 'mode' ? ['automatic', 'manual'] : effects, min: 0, max: 100, step: 0.1 } };
   }
+  for (const [key, value] of Object.entries({ cloud_top: 10, cloud_bottom: 30, cloud_spread: 80 })) states[`number.${key}`].state = String(value);
   const calls = [];
   const connection = { connected: true, calls: 0, cleanups: 0,
     subscribeMessage(cb, msg) { assert.deepEqual(msg, { type: 'weather_effects/subscribe' }); this.calls++; this.callback = cb; return Promise.resolve(() => this.cleanups++); },
@@ -395,6 +396,153 @@ test('all lightning controls use standard service classification and hard fronte
   for (const [key, [min, max]] of Object.entries(lightningNumbers)) { assert.equal(Number(control(card, key).min), min); assert.equal(Number(control(card, key).max), max); }
   assert.match(text(card), /Smaller values draw the bolt faster/); assert.match(text(card), /not its drawing speed/);
   hass.language = 'hr'; card.hass = hass; assert.match(text(card), /Manja vrijednost brže iscrtava/); assert.match(text(card), /Trajanje nestajanja/);
+});
+
+const presetElement = (card, key, value) => walk(card.shadowRoot).find(el => Object.hasOwn(el.dataset, key) && (value === undefined || el.dataset[key] === value));
+function presetFixture() {
+  const f = fixture(); f.hass.user = { is_admin: true }; f.profile.saved_presets = [{ id: 'first', name: 'First' }];
+  f.requests = []; f.hass.callWS = async message => { f.requests.push(message); return { action: message.action, preset_id: message.preset_id || 'new', name: message.name, saved_presets: message.action === 'delete' ? [] : [{ id: message.preset_id || 'new', name: message.name || 'First' }] }; };
+  f.card.render(); return f;
+}
+function choosePreset(card, id = 'first') { const select = presetElement(card, 'presetSelect'); select.value = id; select.fire('change'); }
+function namePreset(card, value) { const input = presetElement(card, 'presetName'); input.value = value; input.fire('input'); }
+
+test('preset manager is strictly admin gated while absent/non-admin user keeps native controls', async () => {
+  const { card, hass, calls } = fixture(); let requests = 0; hass.callWS = async () => requests++;
+  for (const user of [undefined, {}, { is_admin: false }, { is_admin: 1 }]) {
+    hass.user = user; card.hass = hass;
+    for (const button of walk(card.shadowRoot).filter(el => el.dataset.presetAction)) assert.equal(button.disabled, true);
+    assert.match(text(card), /Only administrators/);
+    for (const action of ['save', 'load', 'delete', 'rename', 'factory_reset']) assert.equal(await card.managePreset(action), false);
+  }
+  await card.commit('enabled', false); assert.equal(calls.length, 1); assert.equal(requests, 0);
+});
+
+test('preset save/overwrite/load/rename/delete/factory requests use authenticated WS only and explicit confirmations', async () => {
+  const { card, profile, requests, calls } = presetFixture();
+  const before = JSON.stringify(profile), config = JSON.stringify(card._config); let confirmations = [];
+  globalThis.window = { confirm: prompt => { confirmations.push(prompt); return true; } };
+  try {
+    namePreset(card, '  New visual  '); assert.equal(await card.managePreset('save'), true);
+    assert.deepEqual(requests.at(-1), { type: 'weather_effects/preset', entry_id: 'one', action: 'save', name: 'New visual' });
+    assert.equal(confirmations.length, 0); assert.equal(presetElement(card, 'presetSelect').value, 'new');
+    await card.managePreset('save'); assert.deepEqual(requests.at(-1), { type: 'weather_effects/preset', entry_id: 'one', action: 'save', preset_id: 'new', name: 'New visual', overwrite: true });
+    await card.managePreset('load'); assert.deepEqual(requests.at(-1), { type: 'weather_effects/preset', entry_id: 'one', action: 'load', preset_id: 'new' });
+    namePreset(card, '<img src=x onerror=alert(1)>'); await card.managePreset('rename');
+    assert.equal(requests.at(-1).name, '<img src=x onerror=alert(1)>'); assert.equal(confirmations.length, 2);
+    assert.equal(walk(card.shadowRoot).some(el => el.tagName === 'img'), false); assert.match(text(card), /<img src=x/);
+    await card.managePreset('delete'); assert.equal(requests.at(-1).action, 'delete'); assert.equal(presetElement(card, 'presetSelect').value, '');
+    await card.managePreset('factory_reset'); assert.deepEqual(requests.at(-1), { type: 'weather_effects/preset', entry_id: 'one', action: 'factory_reset' });
+    assert.equal(confirmations.length, 4); assert.match(confirmations[1], /bulk.*lightning master off/);
+    assert.equal(calls.length, 0); assert.equal(JSON.stringify(profile), before); assert.equal(JSON.stringify(card._config), config);
+    assert.match(text(card), /visual settings, not profile connection setup/);
+  } finally { delete globalThis.window; }
+});
+
+test('dropdown never performs CRUD, invalid names and rejected/unavailable confirmations never send', async () => {
+  const { card, requests } = presetFixture();
+  choosePreset(card); assert.equal(requests.length, 0); assert.equal(presetElement(card, 'presetName').value, 'First');
+  for (const confirm of [undefined, () => false, () => { throw new Error('blocked'); }]) {
+    globalThis.window = { confirm };
+    for (const action of ['save', 'load', 'delete', 'factory_reset']) assert.equal(await card.managePreset(action), false);
+  }
+  delete globalThis.window;
+  choosePreset(card, '');
+  for (const name of ['', '   ', 'a'.repeat(51)]) { namePreset(card, name); assert.equal(await card.managePreset('save'), false); }
+  assert.match(text(card), /1–50/); assert.equal(requests.length, 0);
+  for (const action of ['load', 'delete', 'rename', 'not-valid']) assert.equal(await card.managePreset(action), false);
+});
+
+test('preset focus/draft survives hass updates and metadata reconciles on server push without config mutation', async () => {
+  const { card, profile, hass, requests } = presetFixture(); choosePreset(card);
+  const input = presetElement(card, 'presetName'); input.fire('focus'); input.value = 'Draft'; input.fire('input');
+  card.hass = { ...hass }; assert.equal(presetElement(card, 'presetName'), input); assert.equal(input.value, 'Draft');
+  input.fire('blur'); assert.equal(presetElement(card, 'presetName').value, 'Draft');
+  const selector = presetElement(card, 'presetSelect'); selector.fire('focus'); card.hass = { ...hass }; assert.equal(presetElement(card, 'presetSelect'), selector); selector.fire('blur');
+  namePreset(card, 'Renamed'); await card.managePreset('rename');
+  assert.equal(presetElement(card, 'presetSelect').children.at(-1).textContent, 'Renamed'); assert.equal(profile.saved_presets[0].name, 'First');
+  card.hass = { ...hass }; assert.equal(presetElement(card, 'presetSelect').children.at(-1).textContent, 'Renamed');
+  card._summaryRevision = (card._summaryRevision || 0) + 1; card.render(); assert.equal(presetElement(card, 'presetSelect').children.at(-1).textContent, 'First');
+  profile.saved_presets = []; card.render(); assert.equal(presetElement(card, 'presetSelect').value, ''); assert.equal(presetElement(card, 'presetName').value, '');
+  await card.managePreset('load'); assert.equal(requests.length, 1);
+});
+
+test('preset state is per profile, stale async responses and old buttons cannot affect a changed profile', async () => {
+  const { card, profile, hass, requests } = presetFixture(); choosePreset(card); namePreset(card, 'Draft one');
+  const oldButton = presetElement(card, 'presetAction', 'save'); let resolve;
+  hass.callWS = message => { requests.push(message); return new Promise(yes => { resolve = yes; }); };
+  const pending = card.managePreset('rename'); assert.equal(control(card, 'enabled').disabled, true);
+  card._profiles = [profile, { ...profile, id: 'two', saved_presets: [{ id: 'second', name: 'Second' }] }]; card.setConfig({ profile: 'two' });
+  assert.equal(presetElement(card, 'presetName').value, ''); oldButton.fire('click'); assert.equal(requests.length, 1);
+  choosePreset(card, 'second'); namePreset(card, 'Draft two');
+  card.setConfig({ profile: 'one' }); resolve({ saved_presets: [{ id: 'stale', name: 'Stale' }] }); assert.equal(await pending, false);
+  assert.equal(presetElement(card, 'presetName').value, 'Draft one'); assert.equal(presetElement(card, 'presetSelect').value, 'first');
+  card.setConfig({ profile: 'two' }); assert.equal(presetElement(card, 'presetName').value, 'Draft two');
+});
+
+test('disconnect invalidates pending preset replies and WS errors preserve draft and release busy', async () => {
+  const { card, hass } = presetFixture(); namePreset(card, 'Keep me'); let resolve;
+  hass.callWS = () => new Promise(yes => { resolve = yes; }); const pending = card.managePreset('save');
+  card.disconnectedCallback(); resolve({ preset_id: 'bad', saved_presets: [{ id: 'bad', name: 'Bad' }] }); assert.equal(await pending, false);
+  const f = presetFixture(); namePreset(f.card, 'Keep me'); f.hass.callWS = async () => { throw new Error('Name already exists'); };
+  assert.equal(await f.card.managePreset('save'), false); assert.match(text(f.card), /Name already exists/);
+  assert.equal(presetElement(f.card, 'presetName').value, 'Keep me'); assert.equal(control(f.card, 'enabled').disabled, false);
+  delete f.hass.callWS; const messages = []; f.hass.connection.sendMessagePromise = async message => { messages.push(message); return { saved_presets: [] }; };
+  assert.equal(await f.card.managePreset('save'), true); assert.equal(messages[0].type, 'weather_effects/preset');
+});
+
+test('real pointer focus transition retains Save button and busy/permission gates prevent duplicate actions', async () => {
+  const { card, hass, requests } = presetFixture();
+  const input = presetElement(card, 'presetName'); input.fire('focus'); input.value = 'Mouse save'; input.fire('input');
+  const save = presetElement(card, 'presetAction', 'save'); input.fire('blur', { relatedTarget: save });
+  assert.equal(presetElement(card, 'presetAction', 'save'), save, 'blur must not detach mousedown target before click');
+  let resolve; hass.callWS = message => { requests.push(message); return new Promise(yes => { resolve = yes; }); };
+  save.fire('click'); assert.equal(requests.length, 1); assert.equal(requests[0].name, 'Mouse save');
+  await card.managePreset('save'); assert.equal(requests.length, 1);
+  resolve({ saved_presets: [] }); await flush();
+  const focused = presetElement(card, 'presetName'); focused.fire('focus'); hass.user = { is_admin: false }; card.hass = { ...hass };
+  assert.equal(presetElement(card, 'presetAction', 'save').disabled, true); assert.match(text(card), /Only administrators/);
+});
+
+test('remote removal resets a focused saved selector without issuing implicit requests', async () => {
+  const { card, profile, requests } = presetFixture(); choosePreset(card);
+  presetElement(card, 'presetSelect').fire('focus'); profile.saved_presets = []; card.render();
+  assert.equal(presetElement(card, 'presetSelect').value, ''); assert.equal(presetElement(card, 'presetName').value, ''); assert.equal(requests.length, 0);
+});
+
+test('a newer summary wins over pending CRUD response metadata', async () => {
+  const { card, profile, hass } = presetFixture(); choosePreset(card); let resolve;
+  hass.callWS = () => new Promise(yes => { resolve = yes; }); const pending = card.managePreset('rename');
+  profile.saved_presets = []; card._summaryRevision = 1; card.render(); resolve({ preset_id: 'first', saved_presets: [{ id: 'first', name: 'Old response' }] });
+  await pending; assert.equal(presetElement(card, 'presetSelect').value, ''); assert.equal(presetElement(card, 'presetSelect').children.length, 1);
+});
+
+test('cloud subsection appears only for cloud-bearing effects in their own family, separate from base five', async () => {
+  const { card, hass } = fixture();
+  const cloudEffects = ['clouds', 'partlycloudy', 'rain_clouds', 'snow_clouds', 'wind_clouds', 'night_clouds', 'hail', 'sleet', 'downpour', 'storm', 'storm_clouds'];
+  for (const [family, options] of Object.entries(mod.TAB_FAMILIES)) for (const effect of options) {
+    hass.states['select.settings_effect'].state = effect; showTab(card, family);
+    for (const key of ['cloud_top', 'cloud_bottom', 'cloud_spread']) assert.equal(Boolean(control(card, key)), cloudEffects.includes(effect), effect);
+    const base = walk(card.shadowRoot).find(el => el.className === 'numbers'); assert.equal(base.children.length, 5);
+  }
+  hass.states['select.settings_effect'].state = 'clouds'; showTab(card, 'rain'); assert.equal(control(card, 'cloud_top'), undefined);
+  showTab(card, 'clouds'); assert.match(text(card), /refer to cloud centers/); assert.match(text(card), /cannot guarantee/);
+  hass.language = 'hr'; card.hass = hass; assert.match(text(card), /središta oblaka/);
+});
+
+test('cloud percentages have dynamic center bounds, step five, native services and stale/family guards', async () => {
+  const { card, hass, calls, profile } = fixture(); hass.states['select.settings_effect'].state = 'clouds'; showTab(card, 'clouds');
+  assert.equal(control(card, 'cloud_top').max, '30'); assert.equal(control(card, 'cloud_bottom').min, '10');
+  for (const [key, value] of Object.entries({ cloud_top: 10, cloud_bottom: 30, cloud_spread: 80 })) {
+    assert.equal(control(card, key).value, String(value)); assert.equal(control(card, key).step, '5'); assert.match(control(card, key).attributes['aria-label'], /%/);
+    await card.commit(key, value); assert.deepEqual(calls.at(-1), ['number', 'set_value', { entity_id: `number.${key}`, value }]);
+  }
+  const count = calls.length; for (const [key, value] of [['cloud_top', 35], ['cloud_bottom', 5], ['cloud_spread', -1], ['cloud_spread', 101]]) await card.commit(key, value); assert.equal(calls.length, count);
+  const stale = control(card, 'cloud_top'); stale.fire('focus'); hass.states['select.settings_effect'].state = 'rain_clouds'; card.hass = { ...hass }; stale.value = '15'; stale.fire('change'); await flush();
+  assert.equal(calls.length, count); assert.match(text(card), /changed in another control/);
+  showTab(card, 'rain'); const range = control(card, 'cloud_bottom'); range.fire('focus'); hass.states['number.cloud_top'].state = '40'; card.hass = { ...hass }; range.value = '35'; range.fire('change'); await flush(); assert.equal(calls.length, count);
+  hass.states['select.settings_effect'].state = 'rain'; await card.commit('cloud_spread', 70); assert.equal(calls.length, count);
+  hass.states['select.settings_effect'].state = 'rain_clouds'; delete profile.controls.cloud_spread; card.render(); assert.equal(control(card, 'cloud_spread').disabled, true);
 });
 
 test.after(() => { for (const [key, value] of Object.entries(globals)) { if (value === undefined) delete globalThis[key]; else globalThis[key] = value; } });

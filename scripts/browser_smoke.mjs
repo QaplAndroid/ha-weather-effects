@@ -25,7 +25,8 @@ const child = spawn(executable, ['--headless=new', '--remote-debugging-port=0', 
 let launchError;
 child.on('error', error => { launchError = error; });
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-const pending = new Map(), exceptions = [];
+const pending = new Map(), exceptions = [], dialogs = [];
+let acceptDialogs = true;
 let socket, sessionId, nextId = 0;
 function command(method, params = {}, session = sessionId) {
   const id = ++nextId;
@@ -39,6 +40,12 @@ async function evaluate(expression) {
   const result = await command('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
   if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
   return result.result.value;
+}
+async function clickCard(selector) {
+  const point=await evaluate(`(()=>{const input=window.weatherEffectsControlDemo.card.shadowRoot.querySelector(${JSON.stringify(selector)});if(!input||input.disabled)throw Error('Unavailable mouse target');input.scrollIntoView({block:'center'});const r=input.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
+  await command('Input.dispatchMouseEvent',{type:'mouseMoved',...point});
+  await command('Input.dispatchMouseEvent',{type:'mousePressed',...point,button:'left',clickCount:1});
+  await command('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'left',clickCount:1});
 }
 try {
   let endpoint;
@@ -61,6 +68,11 @@ try {
       if (message.error) request.reject(new Error(JSON.stringify(message.error))); else request.resolve(message.result);
     }
     if (message.method === 'Runtime.exceptionThrown') exceptions.push(message.params.exceptionDetails);
+    if (message.method === 'Page.javascriptDialogOpening') {
+      dialogs.push({type:message.params.type,accepted:acceptDialogs});
+      if(message.params.type!=='confirm')exceptions.push({text:'Unexpected browser dialog: '+message.params.type});
+      command('Page.handleJavaScriptDialog',{accept:message.params.type==='confirm'&&acceptDialogs}).catch(error=>exceptions.push({text:error.message}));
+    }
   });
   const { targetId } = await command('Target.createTarget', { url: 'about:blank' });
   sessionId = (await command('Target.attachToTarget', { targetId, flatten: true })).sessionId;
@@ -130,6 +142,23 @@ try {
   })()`);
   assert.ok(coverage.high>coverage.low); assert.equal(coverage.palette,'darkCloud');
   await writeFile(join(output,'overcast.png'),Buffer.from((await command('Page.captureScreenshot',{format:'png'})).data,'base64'));
+  const cloudLayout=await evaluate(`(async()=>{
+    const {layoutClouds,cloudOverlap}=await import('../custom_components/weather_effects/frontend/weather-effects.js');
+    const d=window.weatherEffectsDemo,o=d.overlay;
+    const particles=Array.from({length:12},(_,i)=>({scale:0.6+i%3*0.1,depth:0.5,phase:0,variant:i%2}));
+    const rng=()=>{let seed=42;return()=>((seed=Math.imul(seed,1664525)+1013904223>>>0)/4294967296);};
+    const config={cloud_top:10,cloud_bottom:90,cloud_spread:0};
+    const random=layoutClouds(particles,o.width,o.height,config,rng()),spread=layoutClouds(particles,o.width,o.height,{...config,cloud_spread:100},rng());
+    const score=points=>{let value=0;const period=o.width+Math.max(...points.map(p=>320*p.scale));for(let i=0;i<points.length;i++)for(let j=0;j<i;j++)value+=cloudOverlap(points[i],points[j],period);return value;};
+    d.setConfig({effect:'clouds',cloud_top:55,cloud_bottom:95,cloud_spread:100,density:150,size:0.8,intensity:{heat:0,cloud:null}});
+    await new Promise(resolve=>setTimeout(resolve,100));
+    const centers=o.scenes[0].clouds.map(p=>p.y/o.height);
+    return {randomOverlap:score(random),spreadOverlap:score(spread),centers,allLower:centers.every(y=>y>=0.55&&y<=0.95),reachesBottom:centers.some(y=>y>0.75)};
+  })()`);
+  assert.ok(cloudLayout.spreadOverlap<cloudLayout.randomOverlap*0.75);
+  assert.equal(cloudLayout.allLower,true);assert.equal(cloudLayout.reachesBottom,true);
+  await writeFile(join(output,'clouds-lower-spread.png'),Buffer.from((await command('Page.captureScreenshot',{format:'png'})).data,'base64'));
+  await evaluate('window.weatherEffectsDemo.setConfig({cloud_top:10,cloud_bottom:30,cloud_spread:80,density:100,size:1})');
   const lightning=await evaluate(`(() => {
     const demo=window.weatherEffectsDemo,o=demo.overlay;
     demo.setConfig({effect:'storm',lightning_enabled:false,intensity:{heat:0,cloud:null}});
@@ -235,6 +264,7 @@ try {
     const d=window.weatherEffectsControlDemo,root=d.card.shadowRoot;
     const find=key=>root.querySelector('[data-control="'+key+'"]');
     const change=async(key,value)=>{const input=find(key);if(!input||input.disabled)throw Error('Unavailable control: '+key);if(input.type==='checkbox')input.checked=value;else input.value=String(value);input.dispatchEvent(new Event('change',{bubbles:true}));await new Promise(resolve=>setTimeout(resolve,20));};
+    window.changeWeatherControl=change;
     const initiallyOff=d.settings.lightning_enabled===false;
     const defaultGeneral=root.querySelector('[role="tab"][aria-selected="true"]').dataset.tab==='general';
     const tabCount=root.querySelectorAll('[role="tab"]').length;
@@ -264,6 +294,48 @@ try {
       service:d.calls.find(call=>call.domain==='number'&&call.data.value===2.2)?.service};
   })()`);
   assert.deepEqual(cardChecks,{initiallyOff:true,defaultGeneral:true,tabCount:11,warned:true,autoLocked:true,filtered:true,independent:true,snowUnchanged:true,restored:true,animationSaved:true,switchesIndependent:true,explicit:true,generalNoWrite:true,keyboard:true,readableTab:true,service:'set_value'});
+  await evaluate(`(async()=>{const d=window.weatherEffectsControlDemo;await d.card.selectTab('clouds');await window.changeWeatherControl('cloud_bottom',90);await window.changeWeatherControl('cloud_top',60);await window.changeWeatherControl('cloud_spread',95);await d.card.selectTab('general');})()`);
+  // Exercise a real focus -> text entry -> mouse click, including blur ordering.
+  await clickCard('[data-preset-name]');
+  await command('Input.insertText',{text:'Oblaci nisko'});
+  await clickCard('[data-preset-action="save"]');
+  const saveDeadline=Date.now()+2000;
+  while(!(await evaluate('window.weatherEffectsControlDemo.wsCalls.length'))&&Date.now()<saveDeadline)await delay(25);
+  assert.equal(await evaluate('window.weatherEffectsControlDemo.wsCalls.length'),1,'Real Save click was lost during input blur');
+  await evaluate('window.weatherEffectsPresetTestId=Object.keys(window.weatherEffectsControlDemo.savedPresets)[0]');
+  await clickCard('[data-preset-name]');
+  await evaluate('window.weatherEffectsControlDemo.card.shadowRoot.querySelector("[data-preset-name]").select()');
+  await command('Input.insertText',{text:'Oblaci do dna'});
+  await clickCard('[data-preset-action="rename"]');
+  const renamed=await evaluate('window.weatherEffectsControlDemo.savedPresets[window.weatherEffectsPresetTestId].name');
+  assert.equal(renamed,'Oblaci do dna','Native Rename mouse click must preserve the draft');
+  const loadChecks=await evaluate(`(async()=>{const d=window.weatherEffectsControlDemo;await d.card.selectTab('clouds');await window.changeWeatherControl('cloud_bottom',65);await d.card.selectTab('general');await window.changeWeatherControl('forecast_offset',6);await window.changeWeatherControl('enabled',false);d.settings.lightning_enabled=true;d.refresh();const ok=await d.card.managePreset('load');return {ok,bottom:d.presets.clouds.cloud_bottom,top:d.presets.clouds.cloud_top,spread:d.presets.clouds.cloud_spread,masterOff:!d.settings.lightning_enabled,transport:d.settings.mode==='automatic'&&d.settings.forecast_offset===6&&d.settings.enabled===false,snapshotPrivate:!('mode' in d.savedPresets[window.weatherEffectsPresetTestId].settings)&&!('lightning_enabled' in d.savedPresets[window.weatherEffectsPresetTestId].settings)};})()`);
+  assert.deepEqual(loadChecks,{ok:true,bottom:90,top:60,spread:95,masterOff:true,transport:true,snapshotPrivate:true});
+  acceptDialogs=false;
+  const countBeforeCancel=await evaluate('window.weatherEffectsControlDemo.wsCalls.length');
+  assert.equal(await evaluate('window.weatherEffectsControlDemo.card.managePreset("delete")'),false);
+  assert.equal(await evaluate('window.weatherEffectsControlDemo.wsCalls.length'),countBeforeCancel);
+  acceptDialogs=true;
+  const factoryChecks=await evaluate(`(async()=>{const d=window.weatherEffectsControlDemo;const ok=await d.card.managePreset('factory_reset');const kept=Object.keys(d.savedPresets).length===1;await d.card.selectTab('clouds');const root=d.card.shadowRoot,value=key=>Number(root.querySelector('[data-control="'+key+'"]').value);const values=[value('cloud_top'),value('cloud_bottom'),value('cloud_spread')];await d.card.selectTab('general');return {ok,kept,values,masterOff:!d.settings.lightning_enabled,transport:d.settings.mode==='automatic'&&d.settings.forecast_offset===6&&d.settings.enabled===false};})()`);
+  assert.deepEqual(factoryChecks,{ok:true,kept:true,values:[10,30,80],masterOff:true,transport:true});
+  assert.equal(await evaluate('window.weatherEffectsControlDemo.card.managePreset("load")'),true);
+  await evaluate(`(async()=>{const d=window.weatherEffectsControlDemo;await d.card.selectTab('clouds');await window.changeWeatherControl('cloud_spread',85);await d.card.selectTab('general');})()`);
+  assert.equal(await evaluate('window.weatherEffectsControlDemo.card.managePreset("save")'),true);
+  assert.equal(await evaluate('window.weatherEffectsControlDemo.wsCalls.at(-1).overwrite'),true);
+  const deletion=await evaluate(`(async()=>{const d=window.weatherEffectsControlDemo,before=JSON.stringify(d.presets);const ok=await d.card.managePreset('delete');return {ok,empty:Object.keys(d.savedPresets).length===0,unchanged:JSON.stringify(d.presets)===before};})()`);
+  assert.deepEqual(deletion,{ok:true,empty:true,unchanged:true});
+  await clickCard('[data-preset-name]');await command('Input.insertText',{text:'Oblaci do dna'});await clickCard('[data-preset-action="save"]');
+  await delay(50);
+  const adminOnly=await evaluate(`(async()=>{const d=window.weatherEffectsControlDemo,count=d.wsCalls.length;d.hass.user.is_admin=false;d.refresh();const disabled=[...d.card.shadowRoot.querySelectorAll('[data-preset-action]')].every(button=>button.disabled),refused=await d.card.managePreset('save')===false;d.hass.user.is_admin=true;d.refresh();return {disabled,refused,noWrite:d.wsCalls.length===count};})()`);
+  assert.deepEqual(adminOnly,{disabled:true,refused:true,noWrite:true});
+  const readableActions=await evaluate(`(()=>{const lum=color=>color.match(/[0-9.]+/g).slice(0,3).map(Number).map(v=>v/255).map(v=>v<=0.04045?v/12.92:((v+0.055)/1.055)**2.4).reduce((s,v,i)=>s+v*[0.2126,0.7152,0.0722][i],0);return [...window.weatherEffectsControlDemo.card.shadowRoot.querySelectorAll('[data-preset-action]')].filter(button=>!button.disabled).every(button=>{const style=getComputedStyle(button),a=lum(style.color),b=lum(style.backgroundColor);return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)>=4.5;});})()`);
+  assert.equal(readableActions,true,'Enabled preset buttons must remain readable in dark fallback themes');
+  assert.ok(dialogs.length>=5&&dialogs.every(dialog=>dialog.type==='confirm')&&dialogs.some(dialog=>!dialog.accepted));
+  await evaluate('window.scrollTo(0,0)');
+  await writeFile(join(output,'named-presets.png'),Buffer.from((await command('Page.captureScreenshot',{format:'png'})).data,'base64'));
+  await evaluate('window.weatherEffectsControlDemo.card.selectTab("clouds");window.scrollTo(0,0)');
+  const cloudPage=(await command('Page.getLayoutMetrics')).cssContentSize;
+  await writeFile(join(output,'cloud-position-controls.png'),Buffer.from((await command('Page.captureScreenshot',{format:'png',captureBeyondViewport:true,clip:{x:0,y:0,width:1100,height:Math.min(cloudPage.height,1500),scale:1}})).data,'base64'));
   await evaluate('window.weatherEffectsControlDemo.card.selectTab("rain");window.scrollTo(0,0)');
   await writeFile(join(output,'preset-controls.png'),Buffer.from((await command('Page.captureScreenshot',{format:'png'})).data,'base64'));
   await evaluate('window.weatherEffectsControlDemo.card.selectTab("general")');
@@ -278,9 +350,15 @@ try {
   const mobileTabs=await evaluate(`(()=>{const root=window.weatherEffectsControlDemo.card.shadowRoot,list=root.querySelector('[role="tablist"]');return {overflow:list.scrollWidth>list.clientWidth,bodyFits:document.documentElement.scrollWidth<=innerWidth+1};})()`);
   assert.deepEqual(mobileTabs,{overflow:true,bodyFits:true});
   await writeFile(join(output,'tabs-mobile.png'),Buffer.from((await command('Page.captureScreenshot',{format:'png'})).data,'base64'));
+  await evaluate('window.weatherEffectsControlDemo.card.selectTab("general")');
+  await delay(50);
+  const mobileManagerFits=await evaluate('document.documentElement.scrollWidth<=innerWidth+1');
+  assert.equal(mobileManagerFits,true,'Mobile preset manager must not overflow the page');
+  await evaluate('window.weatherEffectsControlDemo.card.shadowRoot.querySelector(".preset-actions").scrollIntoView({block:"center"})');
+  await writeFile(join(output,'named-presets-mobile.png'),Buffer.from((await command('Page.captureScreenshot',{format:'png'})).data,'base64'));
   assert.deepEqual(exceptions, [], 'Uncaught browser exceptions');
-  await writeFile(join(output, 'report.json'), JSON.stringify({ browser: executable, effects: results, reducedMotion: 'passed', mobile: 'passed', adaptiveVisuals, coverage, lightning, leaderEarly, leaderLate, returnStroke, componentChecks, cooldown, routeSafety, cardChecks, mobileTabs, uncaughtExceptions: exceptions.length }, null, 2) + '\n');
-  console.log(`Real Chromium test passed: ${effects.length} effects, progressive branching lightning, independent bolt/flash safety, and accessible weather tabs/presets (desktop/mobile). Screenshots: ${output}`);
+  await writeFile(join(output, 'report.json'), JSON.stringify({ browser: executable, effects: results, reducedMotion: 'passed', mobile: 'passed', adaptiveVisuals, coverage, cloudLayout, lightning, leaderEarly, leaderLate, returnStroke, componentChecks, cooldown, routeSafety, cardChecks, loadChecks, factoryChecks, deletion, adminOnly, readableActions, dialogs, mobileTabs, mobileManagerFits, uncaughtExceptions: exceptions.length }, null, 2) + '\n');
+  console.log(`Real Chromium test passed: ${effects.length} effects, cloud vertical bands/spread, real mouse/keyboard named preset CRUD/confirmations, lightning safety, and accessible tabs (desktop/mobile). Screenshots: ${output}`);
 } finally {
   // Close the isolated browser (including its renderer children) before fallback kill.
   if (socket?.readyState === WebSocket.OPEN) {

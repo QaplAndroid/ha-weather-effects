@@ -14,6 +14,14 @@ ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = "_weather_effects_wiring_tests"
 
 
+class MockedHomeAssistantError(Exception):
+    pass
+
+
+class MockedUnauthorized(Exception):
+    pass
+
+
 def module(name, **attrs):
     result = ModuleType(name)
     result.__dict__.update(attrs)
@@ -35,6 +43,7 @@ def load_integration():
                             callbacks.append(cb) or Mock())))
     ws = module("homeassistant.components.websocket_api",
                 websocket_command=lambda schema: lambda fn: fn,
+                async_response=lambda fn: fn,
                 async_register_command=Mock())
     coordinator_type = Mock()
     stubs = {
@@ -46,6 +55,9 @@ def load_integration():
         "homeassistant.const": module("homeassistant.const", Platform=SimpleNamespace(
             SENSOR="sensor", SWITCH="switch", SELECT="select", NUMBER="number")),
         "homeassistant.core": module("homeassistant.core", callback=lambda fn: fn),
+        "homeassistant.exceptions": module("homeassistant.exceptions", HomeAssistantError=MockedHomeAssistantError, Unauthorized=MockedUnauthorized),
+        PACKAGE + ".compat": module(PACKAGE + ".compat", vol=SimpleNamespace(
+            Required=lambda key, **kwargs: key, Optional=lambda key, **kwargs: key, In=lambda choices: tuple(choices))),
         "homeassistant.helpers": module("homeassistant.helpers", __path__=[]),
         "homeassistant.helpers.dispatcher": dispatcher,
         "homeassistant.helpers.entity_registry": er,
@@ -113,7 +125,9 @@ class WiringTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(urls), 2)
         self.assertTrue(any("weather-effects.js?v=" in value for value in urls))
         self.assertTrue(any("weather-effects-card.js?v=" in value for value in urls))
-        self.ws.async_register_command.assert_called_once()
+        self.assertEqual(self.ws.async_register_command.call_count, 2)
+        self.assertEqual({call.args[1] for call in self.ws.async_register_command.call_args_list},
+                         {self.integration.websocket_subscribe, self.integration.websocket_preset})
         self.hass.bus.async_listen.assert_called_once()
         self.hass.bus.async_listen.call_args.args[1](SimpleNamespace())
         self.dispatcher.async_dispatcher_send.assert_called_with(self.hass, self.integration.SIGNAL_UPDATED)
@@ -129,6 +143,44 @@ class WiringTests(unittest.IsolatedAsyncioTestCase):
         self.callbacks[0]()
         connection.send_event.assert_called_with(23, [])
         connection.subscriptions[23]()
+
+    async def test_preset_api_rejects_non_admin_before_entry_lookup_for_every_action(self):
+        self.coordinator.async_preset_action = AsyncMock()
+        for action in ("save", "load", "delete", "rename", "factory_reset"):
+            connection = SimpleNamespace(user=SimpleNamespace(is_admin=False), send_result=Mock(), send_error=Mock())
+            with self.assertRaises(MockedUnauthorized):
+                await self.integration.websocket_preset(self.hass, connection,
+                    {"id": 31, "entry_id": "missing", "action": action})
+            connection.send_result.assert_not_called()
+            connection.send_error.assert_not_called()
+        self.coordinator.async_preset_action.assert_not_awaited()
+
+    async def test_preset_api_admin_dispatches_actions_and_returns_metadata(self):
+        response = {"action": "save", "preset_id": "a" * 32, "name": "Winter", "saved_presets": [{"id": "a" * 32, "name": "Winter"}]}
+        self.coordinator.async_preset_action = AsyncMock(return_value=response)
+        connection = SimpleNamespace(user=SimpleNamespace(is_admin=True), send_result=Mock(), send_error=Mock())
+        await self.integration.websocket_preset(self.hass, connection, {
+            "id": 32, "entry_id": "profile", "action": "save", "preset_id": "a" * 32,
+            "name": "Winter", "overwrite": True})
+        self.coordinator.async_preset_action.assert_awaited_once_with("save", preset_id="a" * 32, name="Winter", overwrite=True)
+        connection.send_result.assert_called_once_with(32, response)
+        connection.send_error.assert_not_called()
+        self.assertNotIn("settings", connection.send_result.call_args.args[1])
+        for action in ("load", "delete", "rename", "factory_reset"):
+            await self.integration.websocket_preset(self.hass, connection, {"id": 33, "entry_id": "profile", "action": action})
+            self.coordinator.async_preset_action.assert_awaited_with(action, preset_id=None, name=None, overwrite=False)
+
+    async def test_preset_api_reports_missing_entry_and_domain_validation_errors(self):
+        connection = SimpleNamespace(user=SimpleNamespace(is_admin=True), send_result=Mock(), send_error=Mock())
+        self.coordinator.async_preset_action = AsyncMock()
+        await self.integration.websocket_preset(self.hass, connection, {"id": 34, "entry_id": "missing", "action": "load"})
+        connection.send_error.assert_called_with(34, "not_found", "Weather Effects profile is not loaded")
+        self.coordinator.async_preset_action.assert_not_awaited()
+        for error in (ValueError("Invalid preset name"), MockedHomeAssistantError("Preset not found")):
+            self.coordinator.async_preset_action.side_effect = error
+            await self.integration.websocket_preset(self.hass, connection, {"id": 35, "entry_id": "profile", "action": "load"})
+            connection.send_error.assert_called_with(35, "invalid_preset", str(error))
+        connection.send_result.assert_not_called()
 
     async def test_entry_setup_forwards_all_control_platforms_and_unloads(self):
         coordinator = SimpleNamespace(async_refresh=AsyncMock(), bind_states=Mock(), stop=Mock(),

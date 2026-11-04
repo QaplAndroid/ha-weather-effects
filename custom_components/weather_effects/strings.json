@@ -18,6 +18,9 @@
           "density": "Particle count / cloud density",
           "opacity": "Opacity",
           "wind": "Wind (negative = left)",
+          "cloud_top": "Top of cloud-center band (%)",
+          "cloud_bottom": "Bottom of cloud-center band (%)",
+          "cloud_spread": "Cloud spread (%)",
           "respect_reduced_motion": "Respect device reduced-motion preference",
           "max_fps": "Maximum frames per second",
           "settings_effect": "Edit settings for effect",
@@ -41,6 +44,9 @@
           "enable_entity": "Optional: select input_boolean.christmasmode or another switch. Effects run only while it is on. Clear this field to stop using it.",
           "forecast_offset": "0 = current conditions; +1 to +72 = nearest hourly forecast. Outside forecast coverage or on errors, fall back to current conditions (see diagnostic sensor).",
           "effect": "Used in manual mode only. Automatic mode chooses effects from the weather entity.",
+          "cloud_top": "Default cloud-center upper limit (0 = top of screen). Per-effect overrides are on the card. Must not exceed the lower limit; sprites may extend beyond the center band.",
+          "cloud_bottom": "Default cloud-center lower limit (100 = bottom of screen). Raise this first to allow clouds lower down. Must be at least the upper limit.",
+          "cloud_spread": "Default spacing: 0 = random placement, 100 = stronger distribution and coherent drift. Very large/dense clouds can still overlap. Fog is separate.",
           "respect_reduced_motion": "Pause effects if your device requests reduced motion. Lightning is ALWAYS disabled by reduced motion, even if this switch is off.",
           "adaptive_weather": "Automatic mode only: adapt to available temperature, cloud coverage, rainfall and wind. Missing values keep the saved preset; rainfall may be an hourly forecast estimate.",
           "heat_threshold": "Above this Celsius temperature, sunny effects gain a warmer glow and subtle heat haze.",
@@ -71,7 +77,8 @@
       "weather_required": "Select a weather entity for automatic mode.",
       "entity_missing": "This entity does not exist or has the wrong domain.",
       "invalid_number": "Enter a finite number within the allowed range and step.",
-      "invalid_boolean": "Choose an on/off value."
+      "invalid_boolean": "Choose an on/off value.",
+      "invalid_cloud_bounds": "The top cloud-center limit must not exceed the bottom limit."
     }
   },
   "options": {
@@ -92,6 +99,9 @@
           "density": "Particle count / cloud density",
           "opacity": "Opacity",
           "wind": "Wind (negative = left)",
+          "cloud_top": "Top of cloud-center band (%)",
+          "cloud_bottom": "Bottom of cloud-center band (%)",
+          "cloud_spread": "Cloud spread (%)",
           "respect_reduced_motion": "Respect device reduced-motion preference",
           "max_fps": "Maximum frames per second",
           "settings_effect": "Edit settings for effect",
@@ -115,6 +125,9 @@
           "enable_entity": "Optional: select input_boolean.christmasmode or another switch. Effects run only while it is on. Clear this field to stop using it.",
           "forecast_offset": "0 = current conditions; +1 to +72 = nearest hourly forecast. Outside forecast coverage or on errors, fall back to current conditions (see diagnostic sensor).",
           "effect": "Used in manual mode only. Automatic mode chooses effects from the weather entity.",
+          "cloud_top": "Default cloud-center upper limit (0 = top of screen). Per-effect overrides are on the card. Must not exceed the lower limit; sprites may extend beyond the center band.",
+          "cloud_bottom": "Default cloud-center lower limit (100 = bottom of screen). Raise this first to allow clouds lower down. Must be at least the upper limit.",
+          "cloud_spread": "Default spacing: 0 = random placement, 100 = stronger distribution and coherent drift. Very large/dense clouds can still overlap. Fog is separate.",
           "respect_reduced_motion": "Pause effects if your device requests reduced motion. Lightning is ALWAYS disabled by reduced motion, even if this switch is off.",
           "adaptive_weather": "Automatic mode only: adapt to available temperature, cloud coverage, rainfall and wind. Missing values keep the saved preset; rainfall may be an hourly forecast estimate.",
           "heat_threshold": "Above this Celsius temperature, sunny effects gain a warmer glow and subtle heat haze.",
@@ -145,7 +158,8 @@
       "weather_required": "Select a weather entity for automatic mode.",
       "entity_missing": "This entity does not exist or has the wrong domain.",
       "invalid_number": "Enter a finite number within the allowed range and step.",
-      "invalid_boolean": "Choose an on/off value."
+      "invalid_boolean": "Choose an on/off value.",
+      "invalid_cloud_bounds": "The top cloud-center limit must not exceed the bottom limit."
     }
   },
   "selector": {
@@ -294,6 +308,15 @@
       },
       "wind": {
         "name": "Wind (negative = left)"
+      },
+      "cloud_top": {
+        "name": "Top of cloud-center band (%)"
+      },
+      "cloud_bottom": {
+        "name": "Bottom of cloud-center band (%)"
+      },
+      "cloud_spread": {
+        "name": "Cloud spread (%)"
       },
       "max_fps": {
         "name": "Maximum frames per second"

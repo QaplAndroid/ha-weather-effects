@@ -1,4 +1,5 @@
 """UI-only setup and options for Weather Effects."""
+from copy import deepcopy
 import math
 
 from homeassistant import config_entries
@@ -9,6 +10,8 @@ from homeassistant.helpers import selector
 from .compat import vol
 from .const import DEFAULTS, DEFAULT_WEATHER, DOMAIN, EFFECTS, LIGHTNING_CONTROLS, NUMBER_CONTROLS, NUMBER_UNITS, SWITCH_CONTROLS
 from .logic import normalize_dashboard
+from .named_presets import validate_cloud_bounds
+from .presets import effect_preset
 
 
 def schema(hass, current):
@@ -43,6 +46,8 @@ def schema(hass, current):
         vol.Required("adaptive_weather", default=values["adaptive_weather"]): selector.BooleanSelector(),
         vol.Required("heat_threshold", default=values["heat_threshold"]): number(25, 45, 1, "°C"),
     }
+    for key in ("cloud_top", "cloud_bottom", "cloud_spread"):
+        fields[vol.Required(key, default=values[key])] = number(*NUMBER_CONTROLS[key], unit="%")
     for key in LIGHTNING_CONTROLS:
         fields[vol.Required(key, default=values[key])] = (
             selector.BooleanSelector() if key in SWITCH_CONTROLS
@@ -73,6 +78,14 @@ def validate(hass, data):
             valid = math.isclose(steps, round(steps), rel_tol=0, abs_tol=1e-8)
         if not valid:
             errors[key] = "invalid_number"
+    if not any(key in errors for key in ("cloud_top", "cloud_bottom")):
+        try:
+            validate_cloud_bounds(data)
+            # Flat fallback changes must also keep partial effect overrides valid.
+            for effect in EFFECTS:
+                validate_cloud_bounds(effect_preset(data, effect))
+        except ValueError:
+            errors["cloud_top"] = "invalid_cloud_bounds"
     if not data.get("dashboards"):
         errors["dashboards"] = "dashboard_required"
     else:
@@ -122,14 +135,20 @@ class WeatherEffectsOptionsFlow(config_entries.OptionsFlow):
                 # Preserve all hidden/future storage from the authoritative
                 # settings, but let omitted optional entity fields be removed.
                 current = self.config_entry.options or self.config_entry.data
-                saved = dict(current)
+                saved = deepcopy(current)
                 for key in ("weather_entity", "enable_entity"):
                     if key not in user_input:
                         saved.pop(key, None)
                 saved.update(user_input)
-                for key in ("effect_settings", "settings_effect"):
+                for key in ("effect_settings", "settings_effect", "saved_presets"):
                     if key in current:
-                        saved[key] = current[key]
-                return self.async_create_entry(title="", data=saved)
+                        saved[key] = deepcopy(current[key])
+                try:
+                    for effect in EFFECTS:
+                        validate_cloud_bounds(effect_preset(saved, effect))
+                except ValueError:
+                    errors["cloud_top"] = "invalid_cloud_bounds"
+                if not errors:
+                    return self.async_create_entry(title="", data=saved)
         current = self.config_entry.options or self.config_entry.data
         return self.async_show_form(step_id="init", data_schema=schema(self.hass, user_input or current), errors=errors)

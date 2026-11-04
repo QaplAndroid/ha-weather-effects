@@ -6,10 +6,31 @@
 try {
   await import('../custom_components/weather_effects/frontend/weather-effects-card.js');
   const effects=['off','snow','rain','sun','clouds','partlycloudy','rain_clouds','snow_clouds','fog','wind','wind_clouds','night','night_clouds','hail','sleet','downpour','storm','storm_clouds'];
-  const defaults={speed:1,size:1,density:60,opacity:0.65,wind:0.2};
+  const defaults={speed:1,size:1,density:60,opacity:0.65,wind:0.2,cloud_top:10,cloud_bottom:30,cloud_spread:80};
   const settings={enabled:true,respect_reduced_motion:true,adaptive_weather:true,lightning_enabled:false,mode:'manual',effect:'snow',settings_effect:'snow',forecast_offset:0,max_fps:30,heat_threshold:30,lightning_interval:12,lightning_brightness:0.1,lightning_bolt_enabled:true,lightning_flash_enabled:true,lightning_formation_time:0.8,lightning_duration:0.7,lightning_branches:4,lightning_thickness:1.5,lightning_glow:0.6,lightning_length:0.6};
-  const ranges={forecast_offset:[0,72,1],speed:[0.2,3,0.1],size:[0.3,3,0.1],density:[10,200,1],opacity:[0.05,1,0.05],wind:[-2,2,0.1],max_fps:[15,60,1],heat_threshold:[25,45,1],lightning_interval:[5,60,1],lightning_brightness:[0.05,0.25,0.05],lightning_formation_time:[0.1,3,0.1],lightning_duration:[0.3,2,0.1],lightning_branches:[0,8,1],lightning_thickness:[0.5,4,0.5],lightning_glow:[0,1,0.1],lightning_length:[0.2,0.9,0.1]};
-  const presets={},calls=[],callbacks=new Set(),controls={};
+  const ranges={cloud_top:[0,100,5],cloud_bottom:[0,100,5],cloud_spread:[0,100,5],forecast_offset:[0,72,1],speed:[0.2,3,0.1],size:[0.3,3,0.1],density:[10,200,1],opacity:[0.05,1,0.05],wind:[-2,2,0.1],max_fps:[15,60,1],heat_threshold:[25,45,1],lightning_interval:[5,60,1],lightning_brightness:[0.05,0.25,0.05],lightning_formation_time:[0.1,3,0.1],lightning_duration:[0.3,2,0.1],lightning_branches:[0,8,1],lightning_thickness:[0.5,4,0.5],lightning_glow:[0,1,0.1],lightning_length:[0.2,0.9,0.1]};
+  const initialSettings=structuredClone(settings),presets={},savedPresets={},calls=[],wsCalls=[],callbacks=new Set(),controls={};
+  let presetSerial=0;
+  const summaries=()=>Object.entries(savedPresets).map(([id,p])=>({id,name:p.name}));
+  const visualKeys=Object.keys(settings).filter(key=>!['enabled','mode','forecast_offset','lightning_enabled'].includes(key));
+  function snapshot(){return {...Object.fromEntries(visualKeys.map(key=>[key,settings[key]])),effect_settings:structuredClone(presets)};}
+  function applySnapshot(value){for(const key of visualKeys)if(Object.hasOwn(value,key))settings[key]=value[key];for(const key of Object.keys(presets))delete presets[key];Object.assign(presets,structuredClone(value.effect_settings||{}));settings.lightning_enabled=false;}
+  async function callWS(message){
+    wsCalls.push(structuredClone(message));
+    if(!hass.user.is_admin)throw Error('Administrator required');
+    if(message.type!=='weather_effects/preset'||message.entry_id!=='demo-profile')throw Error('Unknown demo request');
+    const action=message.action;let id=message.preset_id,name=message.name?.trim();
+    if(['save','rename'].includes(action)&&(!name||[...name].length>50))throw Error('Invalid name');
+    if(id&&!savedPresets[id])throw Error('Preset not found');
+    if(['save','rename'].includes(action)&&Object.entries(savedPresets).some(([key,p])=>key!==id&&p.name.toLocaleLowerCase()===name.toLocaleLowerCase()))throw Error('Name already exists');
+    if(action==='save'){if(id&&!message.overwrite)throw Error('Confirm overwrite');if(!id){if(Object.keys(savedPresets).length>=20)throw Error('Preset limit');id=(++presetSerial).toString(16).padStart(32,'0');}savedPresets[id]={name,settings:snapshot()};}
+    else if(action==='rename')savedPresets[id].name=name;
+    else if(action==='load'){name=savedPresets[id].name;applySnapshot(savedPresets[id].settings);}
+    else if(action==='delete'){name=savedPresets[id].name;delete savedPresets[id];}
+    else if(action==='factory_reset'){applySnapshot({...initialSettings,effect_settings:{}});id=null;name=null;}
+    else throw Error('Unknown preset action');
+    refresh();return {action,preset_id:id,name,saved_presets:summaries()};
+  }
   const switches=['enabled','respect_reduced_motion','adaptive_weather','lightning_enabled','lightning_bolt_enabled','lightning_flash_enabled'];
   const selects=['mode','effect','settings_effect'];
   for(const key of [...switches,...selects,...Object.keys(ranges),'status']){
@@ -29,7 +50,7 @@ try {
     }
     const runtimeEffect=settings.mode==='automatic'?'sun':settings.effect;
     const profile={id:'demo-profile',name:'Demo profil',enabled:settings.enabled,effective_enabled:settings.enabled,configured_enabled:settings.enabled,gate_entity:null,gate_enabled:null,controls,
-      effect:settings.enabled?runtimeEffect:'off',mode:settings.mode,settings_effect:settings.settings_effect,...defaults,...presets[runtimeEffect],preset:{...defaults,...presets[runtimeEffect]},
+      saved_presets:summaries(),effect:settings.enabled?runtimeEffect:'off',mode:settings.mode,settings_effect:settings.settings_effect,...defaults,...presets[runtimeEffect],preset:{...defaults,...presets[runtimeEffect]},
       source:settings.mode==='automatic'?'current':'manual',status:'ok',condition:settings.mode==='automatic'?'sunny':null,weather_entity:'weather.demo',dashboards:['lovelace'],
       adaptive_weather:settings.adaptive_weather,...Object.fromEntries(Object.entries(settings).filter(([key])=>key.startsWith('lightning_'))),
       intensity:{heat:settings.mode==='automatic'&&settings.adaptive_weather?0.5:0,cloud:null,rain:null,wind:null},
@@ -38,7 +59,7 @@ try {
     for(const cb of callbacks)cb([profile]);
   }
   const connection={connected:true,subscribeMessage(cb){callbacks.add(cb);queueMicrotask(refresh);return Promise.resolve(()=>callbacks.delete(cb));}};
-  hass={language:'hr',connection,states:{},async callService(domain,service,data){
+  hass={language:'hr',user:{is_admin:true},connection,states:{},callWS,async callService(domain,service,data){
     calls.push({domain,service,data:{...data}});
     const key=Object.keys(controls).find(key=>controls[key]===data.entity_id);
     if(!key)throw new Error('Unknown demo control');
@@ -52,6 +73,6 @@ try {
   }};
   card.setConfig({type:'custom:weather-effects-control-card',profile:'demo-profile'});
   refresh();
-  window.weatherEffectsControlDemo={card,get hass(){return hass;},settings,presets,calls,controls,refresh};
+  window.weatherEffectsControlDemo={card,get hass(){return hass;},settings,presets,savedPresets,calls,wsCalls,controls,refresh};
 }catch(error){document.querySelector('#error').textContent=error.message;window.weatherEffectsControlDemoError=String(error);}
 </script></body></html>

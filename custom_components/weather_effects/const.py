@@ -1,6 +1,6 @@
 """Constants for Weather Effects."""
 DOMAIN = "weather_effects"
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 SIGNAL_UPDATED = f"{DOMAIN}_updated"
 FRONTEND_URL = f"/weather_effects_static/weather-effects.js?v={VERSION}"
 DEFAULT_WEATHER = "weather.forecast_work_work"
@@ -22,6 +22,9 @@ NUMBER_CONTROLS = {
     "density": (10, 200, 1),
     "opacity": (0.05, 1, 0.05),
     "wind": (-2, 2, 0.1),
+    "cloud_top": (0, 100, 5),
+    "cloud_bottom": (0, 100, 5),
+    "cloud_spread": (0, 100, 5),
     "max_fps": (15, 60, 1),
     "heat_threshold": (25, 45, 1),
     "lightning_interval": (5, 60, 1),
@@ -36,6 +39,7 @@ NUMBER_CONTROLS = {
 NUMBER_UNITS = {
     "forecast_offset": "h", "heat_threshold": "°C", "lightning_interval": "s",
     "lightning_formation_time": "s", "lightning_duration": "s",
+    "cloud_top": "%", "cloud_bottom": "%", "cloud_spread": "%",
 }
 # Global profile controls, never copied into per-effect appearance presets.
 LIGHTNING_CONTROLS = tuple(key for key in (*SWITCH_CONTROLS, *NUMBER_CONTROLS)
@@ -56,6 +60,9 @@ DEFAULTS = {
     "density": 60,
     "opacity": 0.65,
     "wind": 0.2,
+    "cloud_top": 10,
+    "cloud_bottom": 30,
+    "cloud_spread": 80,
     "respect_reduced_motion": True,
     "max_fps": 30,
     "adaptive_weather": True,

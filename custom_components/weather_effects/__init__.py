@@ -5,9 +5,11 @@ from homeassistant.components import frontend, websocket_api
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.const import Platform
 from homeassistant.core import callback
+from homeassistant.exceptions import HomeAssistantError, Unauthorized
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers import entity_registry as er
 
+from .compat import vol
 from .const import CONTROL_KEYS, DOMAIN, FRONTEND_URL, SIGNAL_UPDATED, VERSION
 from .coordinator import WeatherEffectsCoordinator
 
@@ -42,7 +44,7 @@ def profile_payload(hass, coordinator):
 
 
 async def async_setup(hass, config):
-    """Register one static module and an authenticated live subscription endpoint."""
+    """Register frontend modules and authenticated live/control endpoints."""
     hass.data[DOMAIN] = {"entries": {}}
     await hass.http.async_register_static_paths([
         StaticPathConfig("/weather_effects_static", str(Path(__file__).parent / "frontend"), False)
@@ -50,6 +52,7 @@ async def async_setup(hass, config):
     frontend.add_extra_js_url(hass, FRONTEND_URL)
     frontend.add_extra_js_url(hass, f"/weather_effects_static/weather-effects-card.js?v={VERSION}")
     websocket_api.async_register_command(hass, websocket_subscribe)
+    websocket_api.async_register_command(hass, websocket_preset)
 
     @callback
     def registry_changed(event):
@@ -104,3 +107,36 @@ def websocket_subscribe(hass, connection, msg):
     connection.subscriptions[msg["id"]] = async_dispatcher_connect(hass, SIGNAL_UPDATED, send)
     connection.send_result(msg["id"])
     send()
+
+
+@websocket_api.websocket_command({
+    "type": "weather_effects/preset",
+    vol.Required("entry_id"): str,
+    vol.Required("action"): vol.In(("save", "load", "delete", "rename", "factory_reset")),
+    vol.Optional("preset_id"): str,
+    vol.Optional("name"): str,
+    vol.Optional("overwrite", default=False): bool,
+})
+@websocket_api.async_response
+async def websocket_preset(hass, connection, msg):
+    """Manage persisted visual snapshots, never from an unauthorised client.
+
+    Bulk configuration changes require an administrator, just like HA's options
+    flow. This check is server-side and precedes even entry lookup. Snapshot
+    contents are never returned; clients receive bounded id/name summaries only.
+    """
+    if not connection.user.is_admin:
+        raise Unauthorized
+    coordinator = hass.data[DOMAIN]["entries"].get(msg["entry_id"])
+    if coordinator is None:
+        connection.send_error(msg["id"], "not_found", "Weather Effects profile is not loaded")
+        return
+    try:
+        result = await coordinator.async_preset_action(
+            msg["action"], preset_id=msg.get("preset_id"),
+            name=msg.get("name"), overwrite=msg.get("overwrite", False),
+        )
+    except (HomeAssistantError, ValueError) as err:
+        connection.send_error(msg["id"], "invalid_preset", str(err))
+        return
+    connection.send_result(msg["id"], result)
