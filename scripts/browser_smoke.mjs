@@ -134,16 +134,39 @@ try {
     const demo=window.weatherEffectsDemo,o=demo.overlay;
     demo.setConfig({effect:'storm',lightning_enabled:false,intensity:{heat:0,cloud:null}});
     const optedOut=o.stepLightning(performance.now()+60000)===null;
-    demo.setConfig({lightning_enabled:true,lightning_interval:5,lightning_brightness:0.1});
+    demo.setConfig({lightning_enabled:true,lightning_interval:5,lightning_brightness:0.1,lightning_bolt_enabled:true,lightning_flash_enabled:true,lightning_formation_time:0.8,lightning_duration:0.7,lightning_branches:4});
     const now=performance.now(),next=o.lightning.nextAt;
     const before=o.stepLightning(next-1)===null;
     const first=o.stepLightning(next);
     if(o.frame!==null)cancelAnimationFrame(o.frame);o.frame=null;
-    o.drawLightning(next+20);
-    return {optedOut,before,wait:next-now,serial:first?.serial,brightness:first?.brightness};
+    // Freeze only the demo's polling/RAF while capturing deterministic stages.
+    // Otherwise its 1-second poll may legitimately repaint with the live clock.
+    clearInterval(o.timer);o.timer=null;
+    window.renderLightningTestFrame=(age)=>{
+      o.ctx.clearRect(0,0,o.width,o.height);
+      for(const scene of o.scenes){if(scene.clouds.length)o.drawClouds(scene,0);if(scene.wind.length)o.drawWind(scene,0);if(scene.rain.length)o.drawRain(scene,0);}
+      const before=o.ctx.getImageData(0,0,o.canvas.width,o.canvas.height).data;
+      o.drawLightning(first.started+age);o.ctx.globalAlpha=1;
+      const after=o.ctx.getImageData(0,0,o.canvas.width,o.canvas.height).data;
+      let changedPixels=0;for(let i=0;i<after.length;i+=4)if(after[i]!==before[i]||after[i+1]!==before[i+1]||after[i+2]!==before[i+2]||after[i+3]!==before[i+3])changedPixels++;
+      return {...o.lightningGeometry.visibleStats(o.lightningStage.leader),...o.lightningStage,changedPixels};
+    };
+    return {optedOut,before,wait:next-now,serial:first?.serial,brightness:first?.brightness,formationTime:first.formationTime,duration:first.duration};
   })()`);
   assert.equal(lightning.optedOut,true);assert.equal(lightning.before,true);assert.ok(lightning.wait>=4900);assert.equal(lightning.serial,1);assert.equal(lightning.brightness,0.1);
+  const leaderEarly=await evaluate('window.renderLightningTestFrame(200)');
+  await writeFile(join(output,'lightning-leader-early.png'),Buffer.from((await command('Page.captureScreenshot',{format:'png'})).data,'base64'));
+  const leaderLate=await evaluate('window.renderLightningTestFrame(600)');
+  await writeFile(join(output,'lightning-leader-late.png'),Buffer.from((await command('Page.captureScreenshot',{format:'png'})).data,'base64'));
+  const returnStroke=await evaluate('window.renderLightningTestFrame(890)');
   await writeFile(join(output,'lightning.png'),Buffer.from((await command('Page.captureScreenshot',{format:'png'})).data,'base64'));
+  assert.equal(lightning.formationTime,800);assert.equal(lightning.duration,700);
+  assert.equal(leaderEarly.leader,0.25);assert.equal(leaderLate.leader,0.75);
+  assert.ok(leaderLate.segments>leaderEarly.segments);assert.ok(leaderLate.paths>=leaderEarly.paths);
+  assert.equal(leaderEarly.wash,0);assert.equal(leaderLate.wash,0);
+  assert.ok(leaderEarly.changedPixels>0&&leaderLate.changedPixels>leaderEarly.changedPixels,'Real canvas must show a growing bolt');
+  assert.equal(returnStroke.returning,true);assert.equal(returnStroke.paths,5);assert.ok(returnStroke.wash>0&&returnStroke.wash<=0.1);
+  await evaluate('window.weatherEffectsDemo.overlay.timer=setInterval(window.weatherEffectsDemo.overlay.onPoll,1000)');
   const cooldown=await evaluate(`(() => {
     const demo=window.weatherEffectsDemo,o=demo.overlay,first=o.lightning.lastAt;
     const between=o.stepLightning(first+4999)===null;
@@ -153,7 +176,27 @@ try {
     return {between,noSecond,second:second?.serial,cleared:o.lightning.flash===null};
   })()`);
   assert.deepEqual(cooldown,{between:true,noSecond:true,second:2,cleared:true});
-  await evaluate('window.weatherEffectsDemo.setConfig({effect:"storm",lightning_enabled:true,respect_reduced_motion:false})');
+  const componentChecks=await evaluate(`(() => {
+    const d=window.weatherEffectsDemo,o=d.overlay,ctx=o.ctx;
+    const fill=ctx.fillRect,stroke=ctx.stroke;let fills=0,strokes=0;
+    ctx.fillRect=function(...args){fills++;return fill.apply(this,args);};
+    ctx.stroke=function(...args){strokes++;return stroke.apply(this,args);};
+    try{
+      d.setConfig({lightning_enabled:true,lightning_bolt_enabled:true,lightning_flash_enabled:false});
+      let event=o.stepLightning(o.lightning.nextAt);o.drawLightning(event.started+event.formationTime+90);
+      const boltOnly=fills===0&&strokes>0;
+      d.setConfig({lightning_enabled:false});fills=0;strokes=0;
+      d.setConfig({lightning_enabled:true,lightning_bolt_enabled:false,lightning_flash_enabled:true});
+      event=o.stepLightning(o.lightning.nextAt);o.drawLightning(event.started+event.formationTime+90);
+      const flashOnly=fills===1&&strokes===0&&o.lightningGeometry.pathCount===0;
+      d.setConfig({lightning_bolt_enabled:false,lightning_flash_enabled:false});
+      const neither=o.stepLightning(performance.now()+1000000)===null;
+      d.setConfig({lightning_enabled:false});
+      return {boltOnly,flashOnly,neither};
+    }finally{ctx.fillRect=fill;ctx.stroke=stroke;}
+  })()`);
+  assert.deepEqual(componentChecks,{boltOnly:true,flashOnly:true,neither:true});
+  await evaluate('window.weatherEffectsDemo.setConfig({effect:"storm",lightning_enabled:true,lightning_bolt_enabled:true,lightning_flash_enabled:true,respect_reduced_motion:false})');
   await command('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
   await delay(100);
   assert.equal(await evaluate('window.weatherEffectsDemo.overlay.stepLightning(performance.now()+1000000)===null'),true,'Lightning bypassed reduced motion override');
@@ -176,7 +219,11 @@ try {
   await writeFile(join(output, 'fog-mobile.png'), Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
   await command('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
   await delay(100);
-  assert.equal(await evaluate('window.weatherEffectsDemo.overlay.frame === null'), true, 'Reduced motion did not pause rendering');
+  // Media-query changes are delivered asynchronously in headless Chromium.
+  const motionDeadline=Date.now()+2000;
+  while(!(await evaluate('window.weatherEffectsDemo.overlay.motion.matches && window.weatherEffectsDemo.overlay.frame === null'))&&Date.now()<motionDeadline) await delay(50);
+  const motionState=await evaluate('({matches:window.weatherEffectsDemo.overlay.motion.matches,paused:window.weatherEffectsDemo.overlay.frame===null,respect:window.weatherEffectsDemo.config.respect_reduced_motion,active:window.weatherEffectsDemo.overlay.active.length})');
+  assert.equal(motionState.paused,true,'Reduced motion did not pause rendering: '+JSON.stringify(motionState));
   await command('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'no-preference'}]});
   await command('Emulation.setDeviceMetricsOverride',{width:1100,height:950,deviceScaleFactor:1,mobile:false});
   await command('Page.navigate',{url:pathToFileURL(join(root,'demo','controls.html')).href});
@@ -188,26 +235,52 @@ try {
     const d=window.weatherEffectsControlDemo,root=d.card.shadowRoot;
     const find=key=>root.querySelector('[data-control="'+key+'"]');
     const change=async(key,value)=>{const input=find(key);if(!input||input.disabled)throw Error('Unavailable control: '+key);if(input.type==='checkbox')input.checked=value;else input.value=String(value);input.dispatchEvent(new Event('change',{bubbles:true}));await new Promise(resolve=>setTimeout(resolve,20));};
-    const initiallyOff=find('lightning_enabled').checked===false;
-    const warned=Boolean(root.querySelector('#lightning-warning')?.textContent);
+    const initiallyOff=d.settings.lightning_enabled===false;
+    const defaultGeneral=root.querySelector('[role="tab"][aria-selected="true"]').dataset.tab==='general';
+    const tabCount=root.querySelectorAll('[role="tab"]').length;
     await change('mode','automatic');
-    const autoLocked=find('effect').disabled&&!find('settings_effect').disabled;
-    await change('settings_effect','rain');await change('speed',2.2);
+    const autoLocked=find('effect').disabled;
+    await d.card.selectTab('rain');await change('speed',2.2);
+    const filtered=[...find('settings_effect').options].map(option=>option.value).join(',')==='rain,rain_clouds,downpour';
     const independent=d.presets.rain.speed===2.2&&d.settings.effect==='snow'&&d.settings.mode==='automatic';
-    await change('settings_effect','snow');const snowUnchanged=Number(find('speed').value)===1;
-    await change('settings_effect','rain');const restored=Number(find('speed').value)===2.2;
+    await d.card.selectTab('snow');const snowUnchanged=Number(find('speed').value)===1;
+    await d.card.selectTab('rain');const restored=Number(find('speed').value)===2.2;
+    await d.card.selectTab('storm');
+    const warned=Boolean(root.querySelector('[id$="-lightning-warning"]')?.textContent);
+    await change('lightning_formation_time',1.2);await change('lightning_branches',6);
+    const animationSaved=d.settings.lightning_formation_time===1.2&&d.settings.lightning_branches===6;
+    await change('lightning_bolt_enabled',false);await change('lightning_flash_enabled',false);
+    const switchesIndependent=!d.settings.lightning_bolt_enabled&&!d.settings.lightning_flash_enabled&&!d.settings.lightning_enabled;
     await change('lightning_enabled',true);const explicit=d.settings.lightning_enabled===true;
     await change('lightning_enabled',false);
-    return {initiallyOff,warned,autoLocked,independent,snowUnchanged,restored,explicit,
+    const before=d.calls.length;await d.card.selectTab('general');const generalNoWrite=d.calls.length===before;
+    const general=root.querySelector('[data-tab="general"]');general.focus();general.dispatchEvent(new KeyboardEvent('keydown',{key:'End',bubbles:true}));
+    await new Promise(resolve=>setTimeout(resolve,20));
+    const keyboard=root.activeElement?.dataset.tab==='storm'&&root.querySelectorAll('[role="tab"][tabindex="0"]').length===1;
+    const style=getComputedStyle(root.querySelector('[role="tab"][aria-selected="true"]'));
+    const luminance=color=>color.match(/[0-9.]+/g).slice(0,3).map(Number).map(v=>v/255).map(v=>v<=0.04045?v/12.92:((v+0.055)/1.055)**2.4).reduce((sum,v,i)=>sum+v*[0.2126,0.7152,0.0722][i],0);
+    const fg=luminance(style.color),bg=luminance(style.backgroundColor),readableTab=(Math.max(fg,bg)+0.05)/(Math.min(fg,bg)+0.05)>=4.5;
+    return {initiallyOff,defaultGeneral,tabCount,warned,autoLocked,filtered,independent,snowUnchanged,restored,animationSaved,switchesIndependent,explicit,generalNoWrite,keyboard,readableTab,
       service:d.calls.find(call=>call.domain==='number'&&call.data.value===2.2)?.service};
   })()`);
-  assert.deepEqual(cardChecks,{initiallyOff:true,warned:true,autoLocked:true,independent:true,snowUnchanged:true,restored:true,explicit:true,service:'set_value'});
+  assert.deepEqual(cardChecks,{initiallyOff:true,defaultGeneral:true,tabCount:11,warned:true,autoLocked:true,filtered:true,independent:true,snowUnchanged:true,restored:true,animationSaved:true,switchesIndependent:true,explicit:true,generalNoWrite:true,keyboard:true,readableTab:true,service:'set_value'});
+  await evaluate('window.weatherEffectsControlDemo.card.selectTab("rain");window.scrollTo(0,0)');
   await writeFile(join(output,'preset-controls.png'),Buffer.from((await command('Page.captureScreenshot',{format:'png'})).data,'base64'));
-  await evaluate('window.scrollTo(0,850)');
+  await evaluate('window.weatherEffectsControlDemo.card.selectTab("general")');
+  await writeFile(join(output,'general-tab.png'),Buffer.from((await command('Page.captureScreenshot',{format:'png'})).data,'base64'));
+  await evaluate('window.weatherEffectsControlDemo.card.selectTab("storm")');
   await writeFile(join(output,'lightning-controls.png'),Buffer.from((await command('Page.captureScreenshot',{format:'png'})).data,'base64'));
+  await evaluate('window.scrollTo(0,900)');
+  await writeFile(join(output,'lightning-animation-controls.png'),Buffer.from((await command('Page.captureScreenshot',{format:'png'})).data,'base64'));
+  await command('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:2,mobile:true});
+  await evaluate('window.scrollTo(0,0);window.weatherEffectsControlDemo.card.selectTab("rain")');
+  await delay(100);
+  const mobileTabs=await evaluate(`(()=>{const root=window.weatherEffectsControlDemo.card.shadowRoot,list=root.querySelector('[role="tablist"]');return {overflow:list.scrollWidth>list.clientWidth,bodyFits:document.documentElement.scrollWidth<=innerWidth+1};})()`);
+  assert.deepEqual(mobileTabs,{overflow:true,bodyFits:true});
+  await writeFile(join(output,'tabs-mobile.png'),Buffer.from((await command('Page.captureScreenshot',{format:'png'})).data,'base64'));
   assert.deepEqual(exceptions, [], 'Uncaught browser exceptions');
-  await writeFile(join(output, 'report.json'), JSON.stringify({ browser: executable, effects: results, reducedMotion: 'passed', mobile: 'passed', adaptiveVisuals, coverage, lightning, cooldown, routeSafety, cardChecks, uncaughtExceptions: exceptions.length }, null, 2) + '\n');
-  console.log(`Real Chromium test passed: ${effects.length} effects, heat/cloud intensity, lightning opt-in/cooldown/motion/routes, and dashboard preset controls. Screenshots: ${output}`);
+  await writeFile(join(output, 'report.json'), JSON.stringify({ browser: executable, effects: results, reducedMotion: 'passed', mobile: 'passed', adaptiveVisuals, coverage, lightning, leaderEarly, leaderLate, returnStroke, componentChecks, cooldown, routeSafety, cardChecks, mobileTabs, uncaughtExceptions: exceptions.length }, null, 2) + '\n');
+  console.log(`Real Chromium test passed: ${effects.length} effects, progressive branching lightning, independent bolt/flash safety, and accessible weather tabs/presets (desktop/mobile). Screenshots: ${output}`);
 } finally {
   // Close the isolated browser (including its renderer children) before fallback kill.
   if (socket?.readyState === WebSocket.OPEN) {

@@ -2,7 +2,7 @@
 
 Snijeg, kiša, sunce i oblaci kao animirani sloj preko **odabranih dashboarda**. Vlastita integracija (custom component), nije Supervisor add-on. Bez HTML kartice, card_mod-a, Lovelace resursa i ručnog uređivanja dashboard YAML-a.
 
-**Verzija 0.4.0 — zasebne postavke svakog efekta, prilagodba vremenskim podacima, vrućina i neobavezne munje.** Kod i simulacije provjereni su lokalno; nije pokrenut stvarni Home Assistant niti provjerena instalacija na tvojoj instanci. Ciljane API mogućnosti: HA 2025.6+ (`async_register_static_paths`, options flow, `weather.get_forecasts`). Kompatibilnost svake HA verzije nije potvrđena.
+**Verzija 0.5.0 — kartica s vremenskim tabovima i usporena animacija nastajanja razgranate munje.** Kod i simulacije provjereni su lokalno; nije pokrenut stvarni Home Assistant niti provjerena instalacija na tvojoj instanci. Ciljane API mogućnosti: HA 2025.6+ (`async_register_static_paths`, options flow, `weather.get_forecasts`). Kompatibilnost svake HA verzije nije potvrđena.
 
 ## Instalacija kroz HACS (custom repository)
 
@@ -19,7 +19,7 @@ HACS instalaciju također treba potvrditi na stvarnoj instanci; lokalni testovi 
 
 ## Ručna instalacija (alternativa)
 
-1. Preuzmi `weather-effects-0.4.0.zip` sa stranice [Releases](https://github.com/QaplAndroid/ha-weather-effects/releases) i raspakiraj ga na računalu.
+1. Preuzmi `weather-effects-0.5.0.zip` sa stranice [Releases](https://github.com/QaplAndroid/ha-weather-effects/releases) i raspakiraj ga na računalu.
 2. Kopiraj njegovu mapu `custom_components/weather_effects` u HA konfiguracijsku mapu, tako da dobiješ `/config/custom_components/weather_effects/manifest.json`. Ako `custom_components` već postoji, kopiraj samo podmapu `weather_effects` u njega. Nemoj prepisivati druge integracije.
    - Koristi npr. Samba share ili Studio Code Server. Konfiguracijska mapa je ista ona u kojoj se nalazi `configuration.yaml`; na Container/Core instalaciji može biti na drugoj host putanji.
 3. **Ponovno pokreni Home Assistant**, ne samo ponovno učitaj YAML.
@@ -36,7 +36,7 @@ Integracija sada daje **Weather Effects Control Card** koja se može dodati kroz
 
 ### Ako već imaš raniju verziju
 
-U HACS-u ažuriraj **Weather Effects** na 0.4.0 (po potrebi provjeri nova izdanja ili ponovno preuzmi), restartaj HA i potpuno osvježi preglednik. Ne trebaš brisati integraciju ni ponovno stvarati profil. Novi `switch`, `select` i `number` entiteti dodaju se pri pokretanju. Kod ručne instalacije zamijeni mapu integracije sadržajem novog ZIP-a.
+U HACS-u ažuriraj **Weather Effects** na 0.5.0 (po potrebi provjeri nova izdanja ili ponovno preuzmi), restartaj HA i potpuno osvježi preglednik. Ne trebaš brisati integraciju ni ponovno stvarati profil. Novi `switch`, `select` i `number` entiteti dodaju se pri pokretanju. Kod ručne instalacije zamijeni mapu integracije sadržajem novog ZIP-a.
 
 ### Dodavanje posebnog dashboarda
 
@@ -53,7 +53,7 @@ Kartica također može stajati na bilo kojem postojećem dashboardu; ne mora bit
 - Uključeno/isključeno, ručni/automatski način i ručni efekt.
 - **Uredi postavke za efekt**: zasebna brzina, veličina, gustoća, neprozirnost i vjetar za odabrani efekt.
 - Prilagodba vremenskim podacima i prag prikaza vrućine.
-- Izričito uključivanje bljeskova munja, razmak i jačina uz upozorenje.
+- Na tabu **Grmljavina**: izričito uključivanje efekata munja, zasebna munja/bljesak, vrijeme nastajanja, trajanje nestajanja, grananje, debljina, sjaj, doseg, razmak i jačina bljeska.
 - Pomak satne prognoze, najviše FPS i poštivanje smanjenog kretanja.
 - Status trenutačno odabranog efekta, vremenski entitet, izvor podataka i vrijeme odabrane prognoze.
 
@@ -63,9 +63,19 @@ Odabir dashboarda, weather entiteta i opcionalnog uvjetnog prekidača ostaje u *
 
 Ako je glavni prekidač uključen, a `input_boolean.christmasmode` isključen, efekt se i dalje ne prikazuje. Kartica razlikuje spremljeno uključivanje od stvarno aktivnog efekta. Također poštuje nedostupne/isključene entitete i prikazuje greške HA poziva umjesto da prijavi lažno spremanje.
 
+### Tabovi po vrsti vremena (novo u 0.5.0)
+
+Kartica se otvara na **Općenito**: uključivanje, stvarno prikazani efekt/način, prilagodba vremenu, prognozni pomak, FPS i smanjeno kretanje. Tehničke vrijednosti i vremenski podaci su u sklopivom pregledu, ne zauzimaju stalno cijelu karticu.
+
+Zasebni tabovi su **Sunce, Oblaci, Kiša, Snijeg, Magla, Vjetar, Noć, Tuča, Susnježica i Grmljavina**. Unutar vrste bira se točna kombinacija, npr. na Kiši: Kiša, Kiša i oblaci ili Pljusak; na Snijegu: Snijeg ili Snijeg i oblaci. Svaka kombinacija i dalje ima svoje spremljene vrijednosti. Prag vrućine je na Suncu, a sve postavke animacije munja na Grmljavini.
+
+Odabir taba mijenja samo cilj uređivanja, **ne uključuje efekt, ne mijenja ručni/automatski način i ne uključuje munje**. Tab je lokalni prikaz te kartice; HA cilj uređivanja ostaje zajednički profil. Ako se cilj promijeni izvana, kartica neće dopustiti da klizač od vidljive vrste zapisuje u drugu vrstu.
+
+Na uskom zaslonu tabovi su vodoravno pomični. Tipkovnica: strelice lijevo/desno, Home i End; aktivni tab i pripadajući panel imaju ARIA oznake. Postojeća konfiguracija kartice ostaje valjana, nema novog YAML-a ni resursa.
+
 ### Standardni HA entiteti i vlastiti raspored
 
-Na uređaju profila pronaći ćeš četiri `switch` entiteta (uključivanje, smanjeno kretanje, prilagodba vremenu i munje), tri `select` entiteta (način, ručni efekt i cilj uređivanja), deset `number` entiteta (pet za izgled, pomak, FPS, prag vrućine, razmak i svjetlina munje) te postojeći statusni senzor. HA dodjeljuje ID-eve; kartica ih pronalazi preko registra, pa radi i nakon preimenovanja.
+Na uređaju profila pronaći ćeš šest `switch` entiteta (uključivanje, smanjeno kretanje, prilagodba vremenu, glavni prekidač munja, vidljiva munja i bljesak zaslona), tri `select` entiteta (način, ručni efekt i cilj uređivanja), šesnaest `number` entiteta (pet za izgled, pomak, FPS, prag vrućine i osam parametara munje) te postojeći statusni senzor. HA dodjeljuje ID-eve; kartica ih pronalazi preko registra, pa radi i nakon preimenovanja.
 
 Ako želiš vlastiti raspored, dodaj te entitete kroz standardnu HA **Entities** ili **Tile** karticu. Mogu se koristiti i u automatizacijama. Kontrolna kartica koristi standardne `switch`, `select` i `number` akcije, s redovnim HA dozvolama korisnika.
 
@@ -73,9 +83,9 @@ Ako kartice nema u pretrazi, prvo provjeri da je integracija učitana, restartaj
 
 ## Zasebne postavke svakog efekta (novo u 0.4.0)
 
-1. Na kartici pod **Uredi postavke za efekt** odaberi npr. **Snijeg**.
+1. Na kartici odaberi tab **Snijeg** i željenu varijantu, npr. **Snijeg i oblaci**.
 2. Podesi pet klizača. Vrijednosti se spremaju odmah po završetku pomicanja.
-3. Odaberi **Kiša** i postavi drukčiju brzinu, gustoću itd. Povratak na Snijeg vraća njegove vrijednosti.
+3. Otvori tab **Kiša**, odaberi varijantu i postavi drukčiju brzinu, gustoću itd. Povratak na Snijeg vraća njegove vrijednosti.
 
 Automatski `rainy` koristi **Kiša i oblaci**, a `pouring` **Pljusak**: za taj prikaz uredi baš taj izbor, ne zasebni efekt Kiša bez oblaka.
 
@@ -116,9 +126,28 @@ Ako neki podatak nedostaje, **ne nagađa se**: zadržava se spremljena postavka 
 **Bljeskovi mogu izazvati napadaje ili nelagodu kod fotosenzitivnih osoba.** Munje su zadano **isključene**, uključuju se izričito zasebnim prekidačem. Uključi ih samo uzimajući u obzir sve gledatelje i uređaje odabranih dashboarda. Nijedno ograničenje ne jamči sigurnost za osjetljive osobe.
 
 - Rade samo za **Grmljavinsko nevrijeme** i **Olujne oblake**, u ručnom ili automatskom načinu.
-- Jedna kratka munja i blagi svjetlosni puls (220 ms), bez dvostrukih/trostrukih nizova. Prvi se čeka cijeli razmak.
-- Razmak je 5–60 s, zadano 12 s; najviše jedan bljesak po razmaku **ukupno kroz sve aktivne profile u jednom pregledniku**. Ako se preklapa više profila s uključenim munjama, bira se najkraći njihov razmak i najniža njihova svjetlina.
-- Neprozirnost svjetlosnog pulsa je 0,05–0,25, zadano 0,10. Sama linija munje može biti vidljivija.
+- Munja je sada proceduralna usporena animacija: glavna staza postupno raste, bočne grane počinju tek kad glavna munja dođe do njih, zatim se jednom pojača sjaj i cijela se munja ugasi. Nije video stvarne munje ni fizikalna simulacija.
+- **Vidljiva munja** i **bljesak zaslona** imaju zasebne prekidače ispod glavnog pristanka. Za izgled usporene kamere možeš ostaviti samo munju, bez bljeska pozadine. Oba podprekidača zadano su uključena radi kompatibilnosti sa starim izričito uključenim profilima; glavni prekidač ostaje zadano isključen.
+- Bljesak, ako je uključen, dolazi samo jednom nakon nastajanja, kratak je (najviše 220 ms), bez dvostrukih/trostrukih nizova i bez svjetlosnog pulsa tijekom rasta.
+- Razmak je 5–60 s, zadano 12 s; najviše jedan događaj **ukupno kroz sve aktivne profile u jednom pregledniku**. Ne preklapaju se: razmak se produljuje na trajanje nastajanja + nestajanja + 0,5 s ako treba. Prvi događaj čeka cijeli razmak.
+- Neprozirnost svjetlosnog pulsa je 0,05–0,25, zadano 0,10. Debljina i vanjski sjaj linije munje podešavaju se odvojeno od tog pulsa.
+Na tabu **Grmljavina** podešavaš:
+
+| Postavka | Raspon · zadano | Učinak |
+| --- | --- | --- |
+| Vrijeme nastajanja | 0,1–3 s · 0,8 s | Manje znači brže; veće daje usporeni rast |
+| Trajanje nestajanja | 0,3–2 s · 0,7 s | Postupno gašenje nakon dovršene munje |
+| Broj grana | 0–8 · 4 | Bočne grane; nula ostavlja samo glavnu stazu |
+| Debljina | 0,5–4 px · 1,5 px | Svijetla jezgra munje |
+| Sjaj | 0–1 · 0,6 | Plavičasti vanjski oreol |
+| Duljina | 0,2–0,9 · 0,6 | Udio visine zaslona koji doseže munja |
+| Razmak | 5–60 s · 12 s | Minimalni razmak događaja, ne brzina crtanja |
+| Svjetlina bljeska | 0,05–0,25 · 0,10 | Samo kratki bljesak pozadine, ne linija munje |
+
+Parametri animacije munje su opći za profil integracije i vrijede za obje grmljavinske varijante; pet klizača izgleda i dalje je zasebno po točno odabranom efektu. Ako se preklapa više uključenih profila, koristi se jedan zajednički događaj: sporije nastajanje i nestajanje, manje grana/sjaja/debljine/dosega i niža svjetlina. Vidljiva munja ili bljesak prikazuju se ako ih traži barem jedan izričito uključen profil. Promjene parametara ne pokreću aktivnu munju ispočetka i ne skraćuju već uspostavljeni razmak.
+
+Geometrija se stvara jednom po događaju, s najviše osam bočnih grana i unaprijed ograničenim spremnicima. Tijekom rasta prikazuje se samo dovršeni dio staze; duljina grana raste nakon dolaska glavne munje. Nema niza brzih ponovnih udara. Ukupni budžet čestica uključuje i grane i bljesak.
+
 - Postavka uređaja **smanjeno kretanje uvijek gasi munje**, čak i ako je opće poštivanje smanjenog kretanja isključeno.
 - Ne rade u skrivenoj kartici, izvan odabranog dashboarda ili kad je efekt isključen. Nakon povratka čeka se novi razmak, nema trenutnog bljeska.
 

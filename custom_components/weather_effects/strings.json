@@ -23,9 +23,17 @@
           "settings_effect": "Edit settings for effect",
           "adaptive_weather": "Adapt intensity to weather data",
           "heat_threshold": "Heat threshold (°C)",
-          "lightning_enabled": "Enable lightning flashes (photosensitivity warning)",
+          "lightning_enabled": "Enable lightning effects (photosensitivity warning)",
           "lightning_interval": "Minimum lightning interval (seconds)",
-          "lightning_brightness": "Lightning wash brightness"
+          "lightning_brightness": "Lightning wash brightness",
+          "lightning_bolt_enabled": "Draw the growing lightning bolt",
+          "lightning_flash_enabled": "Enable screen flash",
+          "lightning_formation_time": "Bolt formation time (seconds; lower = faster)",
+          "lightning_duration": "Bolt fade duration (seconds)",
+          "lightning_branches": "Number of side branches",
+          "lightning_thickness": "Bolt thickness (px)",
+          "lightning_glow": "Bolt glow",
+          "lightning_length": "Bolt length (fraction of screen height)"
         },
         "data_description": {
           "dashboards": "Select dashboards or enter their URL path, e.g. lovelace or dashboard-home. No full URL, leading slash or view path. Effects never appear in settings.",
@@ -37,8 +45,16 @@
           "adaptive_weather": "Automatic mode only: adapt to available temperature, cloud coverage, rainfall and wind. Missing values keep the saved preset; rainfall may be an hourly forecast estimate.",
           "heat_threshold": "Above this Celsius temperature, sunny effects gain a warmer glow and subtle heat haze.",
           "lightning_enabled": "Warning: flashing light can affect photosensitive users. Off by default. Enable explicitly for storm effects; never active with reduced motion.",
-          "lightning_interval": "One brief flash at most per interval across all profiles. Minimum 5 seconds; no rapid or repeated strobe bursts.",
-          "lightning_brightness": "Maximum screen-wash alpha, capped at 0.25. The bolt itself is more visible. Use low values if enabling flashes.",
+          "lightning_interval": "One lightning event at most per interval across profiles. Minimum 5 seconds, extended if needed to finish the animation plus a pause; no repeated strobe bursts.",
+          "lightning_brightness": "Maximum screen-wash alpha, capped at 0.25. Only used if screen flash is enabled. The bolt itself has separate glow/thickness.",
+          "lightning_bolt_enabled": "Independent visible bolt switch; the master must also be enabled. Turning off screen flash still allows slow bolt formation.",
+          "lightning_flash_enabled": "Photosensitivity warning: adds one brief screen-light pulse at the completed strike, not during leader formation. Master consent is still required.",
+          "lightning_formation_time": "0.1–3 seconds for the main leader to form. Lower is faster; side branches appear only after the leader reaches them.",
+          "lightning_duration": "0.3–2 seconds for the completed bolt to fade. Screen flash stays brief and does not follow this fade duration.",
+          "lightning_branches": "0–8 bounded side branches. Zero leaves only the main bolt.",
+          "lightning_thickness": "Width of the bright bolt core in CSS pixels, 0.5–4.",
+          "lightning_glow": "Soft outer glow, 0–1; it does not change screen-flash brightness.",
+          "lightning_length": "Main bolt reach as a fraction of screen height: 0.2–0.9, default 0.6.",
           "speed": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card.",
           "size": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card.",
           "density": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card.",
@@ -53,7 +69,9 @@
       "invalid_dashboard": "Enter a dashboard URL path, not a full URL, view path or settings panel.",
       "name_required": "Enter a profile name.",
       "weather_required": "Select a weather entity for automatic mode.",
-      "entity_missing": "This entity does not exist or has the wrong domain."
+      "entity_missing": "This entity does not exist or has the wrong domain.",
+      "invalid_number": "Enter a finite number within the allowed range and step.",
+      "invalid_boolean": "Choose an on/off value."
     }
   },
   "options": {
@@ -79,9 +97,17 @@
           "settings_effect": "Edit settings for effect",
           "adaptive_weather": "Adapt intensity to weather data",
           "heat_threshold": "Heat threshold (°C)",
-          "lightning_enabled": "Enable lightning flashes (photosensitivity warning)",
+          "lightning_enabled": "Enable lightning effects (photosensitivity warning)",
           "lightning_interval": "Minimum lightning interval (seconds)",
-          "lightning_brightness": "Lightning wash brightness"
+          "lightning_brightness": "Lightning wash brightness",
+          "lightning_bolt_enabled": "Draw the growing lightning bolt",
+          "lightning_flash_enabled": "Enable screen flash",
+          "lightning_formation_time": "Bolt formation time (seconds; lower = faster)",
+          "lightning_duration": "Bolt fade duration (seconds)",
+          "lightning_branches": "Number of side branches",
+          "lightning_thickness": "Bolt thickness (px)",
+          "lightning_glow": "Bolt glow",
+          "lightning_length": "Bolt length (fraction of screen height)"
         },
         "data_description": {
           "dashboards": "Select dashboards or enter their URL path, e.g. lovelace or dashboard-home. No full URL, leading slash or view path. Effects never appear in settings.",
@@ -93,8 +119,16 @@
           "adaptive_weather": "Automatic mode only: adapt to available temperature, cloud coverage, rainfall and wind. Missing values keep the saved preset; rainfall may be an hourly forecast estimate.",
           "heat_threshold": "Above this Celsius temperature, sunny effects gain a warmer glow and subtle heat haze.",
           "lightning_enabled": "Warning: flashing light can affect photosensitive users. Off by default. Enable explicitly for storm effects; never active with reduced motion.",
-          "lightning_interval": "One brief flash at most per interval across all profiles. Minimum 5 seconds; no rapid or repeated strobe bursts.",
-          "lightning_brightness": "Maximum screen-wash alpha, capped at 0.25. The bolt itself is more visible. Use low values if enabling flashes.",
+          "lightning_interval": "One lightning event at most per interval across profiles. Minimum 5 seconds, extended if needed to finish the animation plus a pause; no repeated strobe bursts.",
+          "lightning_brightness": "Maximum screen-wash alpha, capped at 0.25. Only used if screen flash is enabled. The bolt itself has separate glow/thickness.",
+          "lightning_bolt_enabled": "Independent visible bolt switch; the master must also be enabled. Turning off screen flash still allows slow bolt formation.",
+          "lightning_flash_enabled": "Photosensitivity warning: adds one brief screen-light pulse at the completed strike, not during leader formation. Master consent is still required.",
+          "lightning_formation_time": "0.1–3 seconds for the main leader to form. Lower is faster; side branches appear only after the leader reaches them.",
+          "lightning_duration": "0.3–2 seconds for the completed bolt to fade. Screen flash stays brief and does not follow this fade duration.",
+          "lightning_branches": "0–8 bounded side branches. Zero leaves only the main bolt.",
+          "lightning_thickness": "Width of the bright bolt core in CSS pixels, 0.5–4.",
+          "lightning_glow": "Soft outer glow, 0–1; it does not change screen-flash brightness.",
+          "lightning_length": "Main bolt reach as a fraction of screen height: 0.2–0.9, default 0.6.",
           "speed": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card.",
           "size": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card.",
           "density": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card.",
@@ -109,7 +143,9 @@
       "invalid_dashboard": "Enter a dashboard URL path, not a full URL, view path or settings panel.",
       "name_required": "Enter a profile name.",
       "weather_required": "Select a weather entity for automatic mode.",
-      "entity_missing": "This entity does not exist or has the wrong domain."
+      "entity_missing": "This entity does not exist or has the wrong domain.",
+      "invalid_number": "Enter a finite number within the allowed range and step.",
+      "invalid_boolean": "Choose an on/off value."
     }
   },
   "selector": {
@@ -176,7 +212,13 @@
         "name": "Adapt intensity to weather data"
       },
       "lightning_enabled": {
-        "name": "Enable lightning flashes (photosensitivity warning)"
+        "name": "Enable lightning effects (photosensitivity warning)"
+      },
+      "lightning_bolt_enabled": {
+        "name": "Draw the growing lightning bolt"
+      },
+      "lightning_flash_enabled": {
+        "name": "Enable screen flash"
       }
     },
     "select": {
@@ -264,6 +306,24 @@
       },
       "lightning_brightness": {
         "name": "Lightning wash brightness"
+      },
+      "lightning_formation_time": {
+        "name": "Bolt formation time (seconds; lower = faster)"
+      },
+      "lightning_duration": {
+        "name": "Bolt fade duration (seconds)"
+      },
+      "lightning_branches": {
+        "name": "Number of side branches"
+      },
+      "lightning_thickness": {
+        "name": "Bolt thickness (px)"
+      },
+      "lightning_glow": {
+        "name": "Bolt glow"
+      },
+      "lightning_length": {
+        "name": "Bolt length (fraction of screen height)"
       }
     }
   }

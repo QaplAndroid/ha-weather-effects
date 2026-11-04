@@ -23,9 +23,17 @@
           "settings_effect": "Uredi postavke efekta",
           "adaptive_weather": "Prilagodi intenzitet vremenskim podacima",
           "heat_threshold": "Prag vrućine (°C)",
-          "lightning_enabled": "Uključi bljeskove munja (upozorenje na fotosenzitivnost)",
+          "lightning_enabled": "Uključi efekte munja (upozorenje na fotosenzitivnost)",
           "lightning_interval": "Najkraći razmak munja (sekunde)",
-          "lightning_brightness": "Svjetlina bljeska munje"
+          "lightning_brightness": "Svjetlina bljeska munje",
+          "lightning_bolt_enabled": "Prikaži munju koja se grana",
+          "lightning_flash_enabled": "Uključi bljesak zaslona",
+          "lightning_formation_time": "Vrijeme nastajanja munje (sekunde; manje = brže)",
+          "lightning_duration": "Trajanje nestajanja munje (sekunde)",
+          "lightning_branches": "Broj bočnih grana",
+          "lightning_thickness": "Debljina munje (px)",
+          "lightning_glow": "Sjaj munje",
+          "lightning_length": "Duljina munje (udio visine zaslona)"
         },
         "data_description": {
           "dashboards": "Odaberi dashboarde ili upiši njihov URL put, npr. lovelace ili dashboard-home. Bez pune adrese, početne kose crte i putanje prikaza. Efekti se ne prikazuju u postavkama.",
@@ -37,8 +45,16 @@
           "adaptive_weather": "Samo automatski način: koristi dostupnu temperaturu, naoblaku, oborinu i vjetar. Za nedostupne vrijednosti ostaje spremljeni profil; oborina može biti procjena satne prognoze.",
           "heat_threshold": "Iznad ove temperature u °C sunčani efekti dobivaju topliji sjaj i blago titranje vrućine.",
           "lightning_enabled": "Upozorenje: bljeskovi mogu smetati fotosenzitivnim osobama. Zadano isključeno. Izričito uključi za grmljavinu; ne rade uz smanjeno kretanje.",
-          "lightning_interval": "Najviše jedan kratak bljesak po razmaku kroz sve profile. Najmanje 5 sekundi; bez brzih nizova bljeskova.",
-          "lightning_brightness": "Najveća neprozirnost svjetlosnog bljeska, ograničena na 0,25. Sama munja je vidljivija. Preporučuju se niske vrijednosti.",
+          "lightning_interval": "Najviše jedna munja po razmaku kroz sve profile. Najmanje 5 sekundi; produljuje se ako treba završiti animaciju i stanku. Bez nizova brzih bljeskova.",
+          "lightning_brightness": "Najveća neprozirnost bljeska, ograničena na 0,25. Koristi se samo ako je bljesak uključen. Munja ima zasebni sjaj i debljinu.",
+          "lightning_bolt_enabled": "Zaseban prekidač vidljive munje; glavni prekidač mora biti uključen. Munja se može polako stvarati i bez bljeska zaslona.",
+          "lightning_flash_enabled": "Upozorenje na fotosenzitivnost: jedan kratak svjetlosni puls na kraju formiranja, ne tijekom nastajanja. Potreban je i glavni pristanak.",
+          "lightning_formation_time": "0,1–3 sekunde za nastajanje glavne munje. Manje znači brže; bočne grane rastu tek kad glavna munja dođe do njih.",
+          "lightning_duration": "0,3–2 sekunde za nestajanje dovršene munje. Bljesak zaslona i dalje ostaje kratak i ne prati ovo trajanje.",
+          "lightning_branches": "0–8 bočnih grana. Nula ostavlja samo glavnu munju.",
+          "lightning_thickness": "Debljina svijetle jezgre munje u CSS pikselima, 0,5–4.",
+          "lightning_glow": "Meki vanjski sjaj, 0–1; ne mijenja svjetlinu bljeska zaslona.",
+          "lightning_length": "Doseg glavne munje kao udio visine zaslona: 0,2–0,9, zadano 0,6.",
           "speed": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici.",
           "size": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici.",
           "density": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici.",
@@ -53,7 +69,9 @@
       "invalid_dashboard": "Upiši URL put dashboarda, ne punu adresu, prikaz ili stranicu postavki.",
       "name_required": "Upiši naziv profila.",
       "weather_required": "Odaberi weather entitet za automatski način.",
-      "entity_missing": "Entitet ne postoji ili nije odgovarajuće vrste."
+      "entity_missing": "Entitet ne postoji ili nije odgovarajuće vrste.",
+      "invalid_number": "Upiši konačan broj unutar dopuštenog raspona i koraka.",
+      "invalid_boolean": "Odaberi uključeno ili isključeno."
     }
   },
   "options": {
@@ -79,9 +97,17 @@
           "settings_effect": "Uredi postavke efekta",
           "adaptive_weather": "Prilagodi intenzitet vremenskim podacima",
           "heat_threshold": "Prag vrućine (°C)",
-          "lightning_enabled": "Uključi bljeskove munja (upozorenje na fotosenzitivnost)",
+          "lightning_enabled": "Uključi efekte munja (upozorenje na fotosenzitivnost)",
           "lightning_interval": "Najkraći razmak munja (sekunde)",
-          "lightning_brightness": "Svjetlina bljeska munje"
+          "lightning_brightness": "Svjetlina bljeska munje",
+          "lightning_bolt_enabled": "Prikaži munju koja se grana",
+          "lightning_flash_enabled": "Uključi bljesak zaslona",
+          "lightning_formation_time": "Vrijeme nastajanja munje (sekunde; manje = brže)",
+          "lightning_duration": "Trajanje nestajanja munje (sekunde)",
+          "lightning_branches": "Broj bočnih grana",
+          "lightning_thickness": "Debljina munje (px)",
+          "lightning_glow": "Sjaj munje",
+          "lightning_length": "Duljina munje (udio visine zaslona)"
         },
         "data_description": {
           "dashboards": "Odaberi dashboarde ili upiši njihov URL put, npr. lovelace ili dashboard-home. Bez pune adrese, početne kose crte i putanje prikaza. Efekti se ne prikazuju u postavkama.",
@@ -93,8 +119,16 @@
           "adaptive_weather": "Samo automatski način: koristi dostupnu temperaturu, naoblaku, oborinu i vjetar. Za nedostupne vrijednosti ostaje spremljeni profil; oborina može biti procjena satne prognoze.",
           "heat_threshold": "Iznad ove temperature u °C sunčani efekti dobivaju topliji sjaj i blago titranje vrućine.",
           "lightning_enabled": "Upozorenje: bljeskovi mogu smetati fotosenzitivnim osobama. Zadano isključeno. Izričito uključi za grmljavinu; ne rade uz smanjeno kretanje.",
-          "lightning_interval": "Najviše jedan kratak bljesak po razmaku kroz sve profile. Najmanje 5 sekundi; bez brzih nizova bljeskova.",
-          "lightning_brightness": "Najveća neprozirnost svjetlosnog bljeska, ograničena na 0,25. Sama munja je vidljivija. Preporučuju se niske vrijednosti.",
+          "lightning_interval": "Najviše jedna munja po razmaku kroz sve profile. Najmanje 5 sekundi; produljuje se ako treba završiti animaciju i stanku. Bez nizova brzih bljeskova.",
+          "lightning_brightness": "Najveća neprozirnost bljeska, ograničena na 0,25. Koristi se samo ako je bljesak uključen. Munja ima zasebni sjaj i debljinu.",
+          "lightning_bolt_enabled": "Zaseban prekidač vidljive munje; glavni prekidač mora biti uključen. Munja se može polako stvarati i bez bljeska zaslona.",
+          "lightning_flash_enabled": "Upozorenje na fotosenzitivnost: jedan kratak svjetlosni puls na kraju formiranja, ne tijekom nastajanja. Potreban je i glavni pristanak.",
+          "lightning_formation_time": "0,1–3 sekunde za nastajanje glavne munje. Manje znači brže; bočne grane rastu tek kad glavna munja dođe do njih.",
+          "lightning_duration": "0,3–2 sekunde za nestajanje dovršene munje. Bljesak zaslona i dalje ostaje kratak i ne prati ovo trajanje.",
+          "lightning_branches": "0–8 bočnih grana. Nula ostavlja samo glavnu munju.",
+          "lightning_thickness": "Debljina svijetle jezgre munje u CSS pikselima, 0,5–4.",
+          "lightning_glow": "Meki vanjski sjaj, 0–1; ne mijenja svjetlinu bljeska zaslona.",
+          "lightning_length": "Doseg glavne munje kao udio visine zaslona: 0,2–0,9, zadano 0,6.",
           "speed": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici.",
           "size": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici.",
           "density": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici.",
@@ -109,7 +143,9 @@
       "invalid_dashboard": "Upiši URL put dashboarda, ne punu adresu, prikaz ili stranicu postavki.",
       "name_required": "Upiši naziv profila.",
       "weather_required": "Odaberi weather entitet za automatski način.",
-      "entity_missing": "Entitet ne postoji ili nije odgovarajuće vrste."
+      "entity_missing": "Entitet ne postoji ili nije odgovarajuće vrste.",
+      "invalid_number": "Upiši konačan broj unutar dopuštenog raspona i koraka.",
+      "invalid_boolean": "Odaberi uključeno ili isključeno."
     }
   },
   "selector": {
@@ -176,7 +212,13 @@
         "name": "Prilagodi intenzitet vremenskim podacima"
       },
       "lightning_enabled": {
-        "name": "Uključi bljeskove munja (upozorenje na fotosenzitivnost)"
+        "name": "Uključi efekte munja (upozorenje na fotosenzitivnost)"
+      },
+      "lightning_bolt_enabled": {
+        "name": "Prikaži munju koja se grana"
+      },
+      "lightning_flash_enabled": {
+        "name": "Uključi bljesak zaslona"
       }
     },
     "select": {
@@ -264,6 +306,24 @@
       },
       "lightning_brightness": {
         "name": "Svjetlina bljeska munje"
+      },
+      "lightning_formation_time": {
+        "name": "Vrijeme nastajanja munje (sekunde; manje = brže)"
+      },
+      "lightning_duration": {
+        "name": "Trajanje nestajanja munje (sekunde)"
+      },
+      "lightning_branches": {
+        "name": "Broj bočnih grana"
+      },
+      "lightning_thickness": {
+        "name": "Debljina munje (px)"
+      },
+      "lightning_glow": {
+        "name": "Sjaj munje"
+      },
+      "lightning_length": {
+        "name": "Duljina munje (udio visine zaslona)"
       }
     }
   }

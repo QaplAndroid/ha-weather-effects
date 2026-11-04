@@ -10,7 +10,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
-from .const import CONTROL_KEYS, DOMAIN, NUMBER_CONTROLS, SELECT_CONTROLS, SWITCH_CONTROLS
+from .const import CONTROL_KEYS, DOMAIN, LIGHTNING_CONTROLS, NUMBER_CONTROLS, SELECT_CONTROLS, SWITCH_CONTROLS
 from .logic import select_weather, parse_time
 from .presets import APPEARANCE_KEYS, configured_settings, configured_control_value, editing_effect, effect_preset
 from .intensity import adapt, weather_metrics, nearest_hourly
@@ -186,7 +186,7 @@ class WeatherEffectsCoordinator(DataUpdateCoordinator):
             **effective,
             "settings_effect": editing_effect(cfg), "preset": preset,
             "intensity": intensity, "weather_metrics": metrics,
-            **{key: cfg[key] for key in ("respect_reduced_motion", "max_fps", "adaptive_weather", "heat_threshold", "lightning_enabled", "lightning_interval", "lightning_brightness")},
+            **{key: cfg[key] for key in ("respect_reduced_motion", "max_fps", "adaptive_weather", "heat_threshold", *LIGHTNING_CONTROLS)},
             "mode": cfg["mode"], "source": source, "condition": condition,
             "forecast_time": forecast_time, "forecast_offset": cfg["forecast_offset"],
             "status": status, "weather_entity": entity_id,

@@ -175,6 +175,46 @@ class PersistenceRuntimeTests(unittest.IsolatedAsyncioTestCase):
         await restarted.async_set_control("effect", "rain")
         self.assertEqual(self.entry.options["settings_effect"], "rain")
 
+    async def test_lightning_controls_global_persistent_and_never_enable_master(self):
+        before = deepcopy(self.entry.data)
+        expected = {
+            "lightning_enabled": False, "lightning_bolt_enabled": True,
+            "lightning_flash_enabled": True, "lightning_interval": 12,
+            "lightning_brightness": .1, "lightning_formation_time": .8,
+            "lightning_duration": .7, "lightning_branches": 4,
+            "lightning_thickness": 1.5, "lightning_glow": .6, "lightning_length": .6,
+        }
+        self.assertEqual(set(backend.const.LIGHTNING_CONTROLS), set(expected))
+        runtime = await self.coordinator._async_update_data()
+        self.assertEqual({key: runtime[key] for key in expected}, expected)
+        self.assertEqual(self.entry.data, before)
+        self.assertEqual(self.entry.options, {})
+        changed = {"lightning_bolt_enabled": False, "lightning_flash_enabled": False,
+                   "lightning_formation_time": .1, "lightning_duration": 2,
+                   "lightning_branches": 0, "lightning_thickness": 4,
+                   "lightning_glow": 0, "lightning_length": .9}
+        for effect in ("rain", "sun"):
+            await self.coordinator.async_set_control("settings_effect", effect)
+            for key, value in changed.items():
+                await self.coordinator.async_set_control(key, value)
+        for key in ("lightning_bolt_enabled", "lightning_flash_enabled"):
+            await self.coordinator.async_set_control(key, True)
+            changed[key] = True
+        restarted = backend.coordinator.WeatherEffectsCoordinator(self.hass, self.entry)
+        runtime = await restarted._async_update_data()
+        self.assertEqual({key: runtime[key] for key in expected}, {**expected, **changed})
+        self.assertFalse(self.entry.options["lightning_enabled"])
+        self.assertEqual(self.entry.options["effect_settings"], before["effect_settings"])
+        self.assertEqual(self.entry.options["custom"], 42)
+        for effect in backend.const.EFFECTS:
+            self.assertTrue(set(p.effect_preset(self.entry.options, effect)).isdisjoint(expected))
+        # Old master-enabled profiles gain both sub-switches without migration.
+        self.entry.options = {**before, "lightning_enabled": True}
+        runtime = await backend.coordinator.WeatherEffectsCoordinator(self.hass, self.entry)._async_update_data()
+        self.assertTrue(runtime["lightning_enabled"])
+        self.assertTrue(runtime["lightning_bolt_enabled"])
+        self.assertTrue(runtime["lightning_flash_enabled"])
+
     async def test_malformed_preset_maps_do_not_break_valid_control_updates(self):
         for stored in (None, "invalid", [1], {"snow": None}, {"snow": "invalid", "rain": {"speed": 2}}):
             self.entry.options = {**self.entry.data, "effect_settings": stored}
@@ -289,6 +329,23 @@ class PersistenceRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["data"]["settings_effect"], "rain")
         self.assertEqual(result["data"]["speed"], 2.8)
         self.assertNotIn("enable_entity", result["data"])
+        self.assertNotIn("weather_entity", result["data"])
+        self.assertEqual(result["data"]["custom"], 42)
+
+    async def test_general_options_preserve_unknown_data_or_authoritative_options(self):
+        flow = backend.config_flow.WeatherEffectsOptionsFlow()
+        flow.hass = self.hass
+        flow.config_entry = self.entry
+        for options in ({}, {"future_optional": {"nested": [1, 2]}, "effect_settings": {"snow": {"speed": 2, "future": True}}, "settings_effect": "snow"}):
+            self.entry.options = deepcopy(options)
+            before = deepcopy(options or self.entry.data)
+            result = await flow.async_step_init({"name": "Changed", "dashboards": ["wall"], "mode": "manual", "lightning_formation_time": .2})
+            for key in set(before) - {"name", "dashboards", "mode", "weather_entity", "enable_entity", "lightning_formation_time"}:
+                self.assertEqual(result["data"][key], before[key])
+            self.assertEqual(result["data"]["lightning_formation_time"], .2)
+            self.assertEqual(self.entry.options or self.entry.data, before)
+            if options:
+                self.assertNotIn("custom", result["data"])
 
 
 if __name__ == "__main__":

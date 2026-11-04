@@ -1,7 +1,7 @@
 """Native numeric controls for persistent Weather Effects settings."""
 from homeassistant.components.number import NumberEntity, NumberMode
 
-from .const import DOMAIN, NUMBER_CONTROLS
+from .const import DOMAIN, NUMBER_CONTROLS, NUMBER_UNITS
 from .entity import WeatherEffectsControl
 
 
@@ -18,9 +18,8 @@ class WeatherEffectsNumber(WeatherEffectsControl, NumberEntity):
     def __init__(self, coordinator, entry, key):
         super().__init__(coordinator, entry, key)
         self._attr_native_min_value, self._attr_native_max_value, self._attr_native_step = NUMBER_CONTROLS[key]
-        units = {"forecast_offset": "h", "heat_threshold": "°C", "lightning_interval": "s"}
-        if key in units:
-            self._attr_native_unit_of_measurement = units[key]
+        if key in NUMBER_UNITS:
+            self._attr_native_unit_of_measurement = NUMBER_UNITS[key]
 
     @property
     def native_value(self):

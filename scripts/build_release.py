@@ -1,5 +1,6 @@
 """Create translation files and a reproducible manual-install archive. No dependencies."""
 import json
+import runpy
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
 
@@ -15,8 +16,12 @@ LABELS = {
         "opacity": "Opacity", "wind": "Wind (negative = left)",
         "respect_reduced_motion": "Respect device reduced-motion preference", "max_fps": "Maximum frames per second",
         "settings_effect": "Edit settings for effect", "adaptive_weather": "Adapt intensity to weather data",
-        "heat_threshold": "Heat threshold (°C)", "lightning_enabled": "Enable lightning flashes (photosensitivity warning)",
+        "heat_threshold": "Heat threshold (°C)", "lightning_enabled": "Enable lightning effects (photosensitivity warning)",
         "lightning_interval": "Minimum lightning interval (seconds)", "lightning_brightness": "Lightning wash brightness",
+        "lightning_bolt_enabled": "Draw the growing lightning bolt", "lightning_flash_enabled": "Enable screen flash",
+        "lightning_formation_time": "Bolt formation time (seconds; lower = faster)",
+        "lightning_duration": "Bolt fade duration (seconds)", "lightning_branches": "Number of side branches",
+        "lightning_thickness": "Bolt thickness (px)", "lightning_glow": "Bolt glow", "lightning_length": "Bolt length (fraction of screen height)",
     },
     "hr": {
         "name": "Naziv profila", "enabled": "Uključi efekte", "dashboards": "Odabrani dashboardi",
@@ -26,8 +31,12 @@ LABELS = {
         "opacity": "Neprozirnost", "wind": "Vjetar (negativno = ulijevo)",
         "respect_reduced_motion": "Poštuj postavku smanjenog kretanja uređaja", "max_fps": "Najveći broj sličica u sekundi",
         "settings_effect": "Uredi postavke efekta", "adaptive_weather": "Prilagodi intenzitet vremenskim podacima",
-        "heat_threshold": "Prag vrućine (°C)", "lightning_enabled": "Uključi bljeskove munja (upozorenje na fotosenzitivnost)",
+        "heat_threshold": "Prag vrućine (°C)", "lightning_enabled": "Uključi efekte munja (upozorenje na fotosenzitivnost)",
         "lightning_interval": "Najkraći razmak munja (sekunde)", "lightning_brightness": "Svjetlina bljeska munje",
+        "lightning_bolt_enabled": "Prikaži munju koja se grana", "lightning_flash_enabled": "Uključi bljesak zaslona",
+        "lightning_formation_time": "Vrijeme nastajanja munje (sekunde; manje = brže)",
+        "lightning_duration": "Trajanje nestajanja munje (sekunde)", "lightning_branches": "Broj bočnih grana",
+        "lightning_thickness": "Debljina munje (px)", "lightning_glow": "Sjaj munje", "lightning_length": "Duljina munje (udio visine zaslona)",
     },
 }
 DESCRIPTIONS = {
@@ -41,8 +50,16 @@ DESCRIPTIONS = {
         "adaptive_weather": "Automatic mode only: adapt to available temperature, cloud coverage, rainfall and wind. Missing values keep the saved preset; rainfall may be an hourly forecast estimate.",
         "heat_threshold": "Above this Celsius temperature, sunny effects gain a warmer glow and subtle heat haze.",
         "lightning_enabled": "Warning: flashing light can affect photosensitive users. Off by default. Enable explicitly for storm effects; never active with reduced motion.",
-        "lightning_interval": "One brief flash at most per interval across all profiles. Minimum 5 seconds; no rapid or repeated strobe bursts.",
-        "lightning_brightness": "Maximum screen-wash alpha, capped at 0.25. The bolt itself is more visible. Use low values if enabling flashes.",
+        "lightning_interval": "One lightning event at most per interval across profiles. Minimum 5 seconds, extended if needed to finish the animation plus a pause; no repeated strobe bursts.",
+        "lightning_brightness": "Maximum screen-wash alpha, capped at 0.25. Only used if screen flash is enabled. The bolt itself has separate glow/thickness.",
+        "lightning_bolt_enabled": "Independent visible bolt switch; the master must also be enabled. Turning off screen flash still allows slow bolt formation.",
+        "lightning_flash_enabled": "Photosensitivity warning: adds one brief screen-light pulse at the completed strike, not during leader formation. Master consent is still required.",
+        "lightning_formation_time": "0.1–3 seconds for the main leader to form. Lower is faster; side branches appear only after the leader reaches them.",
+        "lightning_duration": "0.3–2 seconds for the completed bolt to fade. Screen flash stays brief and does not follow this fade duration.",
+        "lightning_branches": "0–8 bounded side branches. Zero leaves only the main bolt.",
+        "lightning_thickness": "Width of the bright bolt core in CSS pixels, 0.5–4.",
+        "lightning_glow": "Soft outer glow, 0–1; it does not change screen-flash brightness.",
+        "lightning_length": "Main bolt reach as a fraction of screen height: 0.2–0.9, default 0.6.",
         **{key: "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card." for key in ("speed", "size", "density", "opacity", "wind")},
     },
     "hr": {
@@ -55,18 +72,27 @@ DESCRIPTIONS = {
         "adaptive_weather": "Samo automatski način: koristi dostupnu temperaturu, naoblaku, oborinu i vjetar. Za nedostupne vrijednosti ostaje spremljeni profil; oborina može biti procjena satne prognoze.",
         "heat_threshold": "Iznad ove temperature u °C sunčani efekti dobivaju topliji sjaj i blago titranje vrućine.",
         "lightning_enabled": "Upozorenje: bljeskovi mogu smetati fotosenzitivnim osobama. Zadano isključeno. Izričito uključi za grmljavinu; ne rade uz smanjeno kretanje.",
-        "lightning_interval": "Najviše jedan kratak bljesak po razmaku kroz sve profile. Najmanje 5 sekundi; bez brzih nizova bljeskova.",
-        "lightning_brightness": "Najveća neprozirnost svjetlosnog bljeska, ograničena na 0,25. Sama munja je vidljivija. Preporučuju se niske vrijednosti.",
+        "lightning_interval": "Najviše jedna munja po razmaku kroz sve profile. Najmanje 5 sekundi; produljuje se ako treba završiti animaciju i stanku. Bez nizova brzih bljeskova.",
+        "lightning_brightness": "Najveća neprozirnost bljeska, ograničena na 0,25. Koristi se samo ako je bljesak uključen. Munja ima zasebni sjaj i debljinu.",
+        "lightning_bolt_enabled": "Zaseban prekidač vidljive munje; glavni prekidač mora biti uključen. Munja se može polako stvarati i bez bljeska zaslona.",
+        "lightning_flash_enabled": "Upozorenje na fotosenzitivnost: jedan kratak svjetlosni puls na kraju formiranja, ne tijekom nastajanja. Potreban je i glavni pristanak.",
+        "lightning_formation_time": "0,1–3 sekunde za nastajanje glavne munje. Manje znači brže; bočne grane rastu tek kad glavna munja dođe do njih.",
+        "lightning_duration": "0,3–2 sekunde za nestajanje dovršene munje. Bljesak zaslona i dalje ostaje kratak i ne prati ovo trajanje.",
+        "lightning_branches": "0–8 bočnih grana. Nula ostavlja samo glavnu munju.",
+        "lightning_thickness": "Debljina svijetle jezgre munje u CSS pikselima, 0,5–4.",
+        "lightning_glow": "Meki vanjski sjaj, 0–1; ne mijenja svjetlinu bljeska zaslona.",
+        "lightning_length": "Doseg glavne munje kao udio visine zaslona: 0,2–0,9, zadano 0,6.",
         **{key: "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici." for key in ("speed", "size", "density", "opacity", "wind")},
     },
 }
 ERRORS = {
-    "en": {"dashboard_required": "Select at least one dashboard.", "invalid_dashboard": "Enter a dashboard URL path, not a full URL, view path or settings panel.", "name_required": "Enter a profile name.", "weather_required": "Select a weather entity for automatic mode.", "entity_missing": "This entity does not exist or has the wrong domain."},
-    "hr": {"dashboard_required": "Odaberi barem jedan dashboard.", "invalid_dashboard": "Upiši URL put dashboarda, ne punu adresu, prikaz ili stranicu postavki.", "name_required": "Upiši naziv profila.", "weather_required": "Odaberi weather entitet za automatski način.", "entity_missing": "Entitet ne postoji ili nije odgovarajuće vrste."},
+    "en": {"dashboard_required": "Select at least one dashboard.", "invalid_dashboard": "Enter a dashboard URL path, not a full URL, view path or settings panel.", "name_required": "Enter a profile name.", "weather_required": "Select a weather entity for automatic mode.", "entity_missing": "This entity does not exist or has the wrong domain.", "invalid_number": "Enter a finite number within the allowed range and step.", "invalid_boolean": "Choose an on/off value."},
+    "hr": {"dashboard_required": "Odaberi barem jedan dashboard.", "invalid_dashboard": "Upiši URL put dashboarda, ne punu adresu, prikaz ili stranicu postavki.", "name_required": "Upiši naziv profila.", "weather_required": "Odaberi weather entitet za automatski način.", "entity_missing": "Entitet ne postoji ili nije odgovarajuće vrste.", "invalid_number": "Upiši konačan broj unutar dopuštenog raspona i koraka.", "invalid_boolean": "Odaberi uključeno ili isključeno."},
 }
 
 
 def translations():
+    definitions = runpy.run_path(str(COMPONENT / "const.py"))
     for lang, labels in LABELS.items():
         form = {"title": "Weather Effects", "data": labels, "data_description": DESCRIPTIONS[lang]}
         form["description"] = ("Choose where and how weather effects appear. All options can be changed later."
@@ -84,15 +110,13 @@ def translations():
                    "selector": {"mode": {"options": {"manual": "Manual" if lang == "en" else "Ručno", "automatic": "Automatic" if lang == "en" else "Automatski"}},
                                 "effect": {"options": effects}, "settings_effect": {"options": effects}}}
         content["entity"] = {
-            "switch": {key: {"name": labels[key]} for key in ("enabled", "respect_reduced_motion", "adaptive_weather", "lightning_enabled")},
+            "switch": {key: {"name": labels[key]} for key in definitions["SWITCH_CONTROLS"]},
             "select": {
                 "mode": {"name": labels["mode"], "state": content["selector"]["mode"]["options"]},
                 "effect": {"name": labels["effect"], "state": effects},
                 "settings_effect": {"name": labels["settings_effect"], "state": effects},
             },
-            "number": {key: {"name": labels[key]} for key in (
-                "forecast_offset", "speed", "size", "density", "opacity", "wind", "max_fps",
-                "heat_threshold", "lightning_interval", "lightning_brightness")},
+            "number": {key: {"name": labels[key]} for key in definitions["NUMBER_CONTROLS"]},
         }
         target = COMPONENT / "translations" / f"{lang}.json"
         target.parent.mkdir(parents=True, exist_ok=True)

@@ -1,11 +1,13 @@
 """UI-only setup and options for Weather Effects."""
+import math
+
 from homeassistant import config_entries
 from homeassistant.components import frontend
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .compat import vol
-from .const import DEFAULTS, DEFAULT_WEATHER, DOMAIN, EFFECTS
+from .const import DEFAULTS, DEFAULT_WEATHER, DOMAIN, EFFECTS, LIGHTNING_CONTROLS, NUMBER_CONTROLS, NUMBER_UNITS, SWITCH_CONTROLS
 from .logic import normalize_dashboard
 
 
@@ -40,10 +42,12 @@ def schema(hass, current):
         vol.Required("max_fps", default=values["max_fps"]): number(15, 60, 1),
         vol.Required("adaptive_weather", default=values["adaptive_weather"]): selector.BooleanSelector(),
         vol.Required("heat_threshold", default=values["heat_threshold"]): number(25, 45, 1, "°C"),
-        vol.Required("lightning_enabled", default=values["lightning_enabled"]): selector.BooleanSelector(),
-        vol.Required("lightning_interval", default=values["lightning_interval"]): number(5, 60, 1, "s"),
-        vol.Required("lightning_brightness", default=values["lightning_brightness"]): number(0.05, 0.25, 0.05),
     }
+    for key in LIGHTNING_CONTROLS:
+        fields[vol.Required(key, default=values[key])] = (
+            selector.BooleanSelector() if key in SWITCH_CONTROLS
+            else number(*NUMBER_CONTROLS[key], unit=NUMBER_UNITS.get(key))
+        )
     return vol.Schema(fields)
 
 
@@ -56,6 +60,19 @@ def number(low, high, step, unit=None):
 
 def validate(hass, data):
     errors = {}
+    for key in SWITCH_CONTROLS:
+        if key in data and type(data[key]) is not bool:
+            errors[key] = "invalid_boolean"
+    for key, (low, high, step) in NUMBER_CONTROLS.items():
+        if key not in data:
+            continue
+        value = data[key]
+        valid = type(value) in (int, float) and low <= value <= high and math.isfinite(value)
+        if valid:
+            steps = (value - low) / step
+            valid = math.isclose(steps, round(steps), rel_tol=0, abs_tol=1e-8)
+        if not valid:
+            errors[key] = "invalid_number"
     if not data.get("dashboards"):
         errors["dashboards"] = "dashboard_required"
     else:
@@ -102,10 +119,14 @@ class WeatherEffectsOptionsFlow(config_entries.OptionsFlow):
             errors = validate(self.hass, user_input)
             if not errors:
                 # This general form edits legacy defaults, not effect presets.
-                # Preserve hidden per-effect storage, while allowing optional
-                # entity fields omitted from this submission to be removed.
+                # Preserve all hidden/future storage from the authoritative
+                # settings, but let omitted optional entity fields be removed.
                 current = self.config_entry.options or self.config_entry.data
-                saved = dict(user_input)
+                saved = dict(current)
+                for key in ("weather_entity", "enable_entity"):
+                    if key not in user_input:
+                        saved.pop(key, None)
+                saved.update(user_input)
                 for key in ("effect_settings", "settings_effect"):
                     if key in current:
                         saved[key] = current[key]

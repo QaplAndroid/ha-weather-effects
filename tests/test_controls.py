@@ -38,6 +38,8 @@ def load_entities():
         package + ".presets": backend.presets,
         "homeassistant": _harness.module("homeassistant", __path__=[]),
         "homeassistant.components": _harness.module("homeassistant.components", __path__=[]),
+        "homeassistant.components.sensor": _harness.module("homeassistant.components.sensor", SensorEntity=MockedPlatformEntity),
+        "homeassistant.helpers.entity": _harness.module("homeassistant.helpers.entity", EntityCategory=SimpleNamespace(DIAGNOSTIC="diagnostic")),
         "homeassistant.components.switch": _harness.module("homeassistant.components.switch", SwitchEntity=MockedPlatformEntity),
         "homeassistant.components.select": _harness.module("homeassistant.components.select", SelectEntity=MockedPlatformEntity),
         "homeassistant.components.number": _harness.module("homeassistant.components.number", NumberEntity=MockedPlatformEntity, NumberMode=SimpleNamespace(SLIDER="slider")),
@@ -46,7 +48,7 @@ def load_entities():
     }
     loaded = {}
     with patch.dict(sys.modules, stubs):
-        for name in ("entity", "switch", "select", "number"):
+        for name in ("entity", "switch", "select", "number", "sensor"):
             spec = importlib.util.spec_from_file_location(package + "." + name, _harness.BACKEND / (name + ".py"))
             value = importlib.util.module_from_spec(spec)
             sys.modules[spec.name] = value
@@ -112,6 +114,8 @@ class ControlsTests(unittest.IsolatedAsyncioTestCase):
         cases = [("bad", 1), ([], 1), ("enabled", 1), ("enabled", "false"),
                  ("respect_reduced_motion", 0), ("mode", "auto"), ("mode", []),
                  ("effect", "invalid_effect"), ("effect", None)]
+        for key in backend.const.SWITCH_CONTROLS:
+            cases.extend((key, value) for value in (0, 1, "false", None, [], {}))
         for key, (low, high, step) in backend.const.NUMBER_CONTROLS.items():
             cases.extend((key, value) for value in (True, "1", None, [], {}, float("nan"), float("inf"), -float("inf"), low - step, high + step, low + step / 2, 10 ** 500))
         for key, value in cases:
@@ -200,6 +204,14 @@ class ControlsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.entry.options["speed"], 1)
         self.assertEqual(self.entry.options["effect"], "snow")
 
+    async def test_status_attributes_include_all_global_lightning_controls(self):
+        self.coordinator.data = await self.coordinator._async_update_data()
+        added = []
+        await entities.sensor.async_setup_entry(self.hass, self.entry, added.extend)
+        attributes = added[0].extra_state_attributes
+        for key in backend.const.LIGHTNING_CONTROLS:
+            self.assertEqual(attributes[key], backend.const.DEFAULTS[key])
+
     async def test_platform_entities_identity_metadata_configured_state_and_services(self):
         added = []
         for platform in (entities.switch, entities.select, entities.number):
@@ -216,6 +228,11 @@ class ControlsTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(entity._attr_translation_key, key)
             self.assertEqual(entity.configured_value, backend.presets.configured_control_value(self.entry.data, key))
         self.assertTrue(controls["enabled"].is_on)
+        self.assertFalse(controls["lightning_enabled"].is_on)
+        self.assertTrue(controls["lightning_bolt_enabled"].is_on)
+        self.assertTrue(controls["lightning_flash_enabled"].is_on)
+        for key, unit in backend.const.NUMBER_UNITS.items():
+            self.assertEqual(controls[key]._attr_native_unit_of_measurement, unit)
         self.assertEqual(controls["effect"].current_option, "snow")
         self.assertEqual(controls["effect"]._attr_options, list(backend.const.EFFECTS))
         for key, (low, high, step) in backend.const.NUMBER_CONTROLS.items():

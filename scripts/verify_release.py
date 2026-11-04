@@ -1,6 +1,7 @@
 """Check release structure and localization without importing Home Assistant."""
 import ast
 import json
+import runpy
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -37,11 +38,11 @@ assert set(effects) == set(english["selector"]["effect"]["options"]), "Effect se
 assert set(effects) == set(english["selector"]["settings_effect"]["options"]), "Preset selector translation mismatch"
 assert set(effects) == set(english["entity"]["select"]["settings_effect"]["state"]), "Native preset translation mismatch"
 assert set(effects) == set(english["entity"]["select"]["effect"]["state"]), "Native effect translation mismatch"
+definitions = runpy.run_path(str(component / "const.py"))
 for platform, controls in {
-    "switch": ("enabled", "respect_reduced_motion", "adaptive_weather", "lightning_enabled"),
-    "select": ("mode", "effect", "settings_effect"),
-    "number": ("forecast_offset", "speed", "size", "density", "opacity", "wind", "max_fps",
-               "heat_threshold", "lightning_interval", "lightning_brightness"),
+    "switch": definitions["SWITCH_CONTROLS"],
+    "select": definitions["SELECT_CONTROLS"],
+    "number": definitions["NUMBER_CONTROLS"],
 }.items():
     for key in controls:
         assert english["entity"][platform][key]["name"], f"Missing entity translation: {key}"

@@ -3,9 +3,11 @@ const BaseElement = globalThis.HTMLElement || class {};
 const CARD = 'weather-effects-control-card';
 const TYPE = `custom:${CARD}`;
 const APPEARANCE = ['speed', 'size', 'density', 'opacity', 'wind'];
-const SWITCHES = ['enabled', 'respect_reduced_motion', 'adaptive_weather', 'lightning_enabled'];
+const SWITCHES = ['enabled', 'respect_reduced_motion', 'adaptive_weather', 'lightning_enabled', 'lightning_bolt_enabled', 'lightning_flash_enabled'];
+export const TAB_FAMILIES = { general: [], sun: ['sun', 'partlycloudy'], clouds: ['clouds'], rain: ['rain', 'rain_clouds', 'downpour'], snow: ['snow', 'snow_clouds'], fog: ['fog'], wind: ['wind', 'wind_clouds'], night: ['night', 'night_clouds'], hail: ['hail'], sleet: ['sleet'], storm: ['storm', 'storm_clouds'] };
+let cardInstance = 0;
 const SELECTS = ['mode', 'effect', 'settings_effect'];
-const NUMBERS = { forecast_offset: [0, 72, 1], speed: [0.2, 3, 0.1], size: [0.3, 3, 0.1], density: [10, 200, 1], opacity: [0.05, 1, 0.05], wind: [-2, 2, 0.1], max_fps: [15, 60, 1], heat_threshold: [25, 45, 1], lightning_interval: [5, 60, 1], lightning_brightness: [0.05, 0.25, 0.05] };
+const NUMBERS = { forecast_offset: [0, 72, 1], speed: [0.2, 3, 0.1], size: [0.3, 3, 0.1], density: [10, 200, 1], opacity: [0.05, 1, 0.05], wind: [-2, 2, 0.1], max_fps: [15, 60, 1], heat_threshold: [25, 45, 1], lightning_interval: [5, 60, 1], lightning_brightness: [0.05, 0.25, 0.05], lightning_formation_time: [0.1, 3, 0.1], lightning_duration: [0.3, 2, 0.1], lightning_branches: [0, 8, 1], lightning_thickness: [0.5, 4, 0.5], lightning_glow: [0, 1, 0.1], lightning_length: [0.2, 0.9, 0.1] };
 const LABELS = {
   en: { ok: 'Ready', forecast_fallback: 'Forecast unavailable; using current weather', weather_unavailable: 'Weather unavailable', enable_entity_unavailable: 'External gate unavailable', current: 'Current weather', forecast: 'Forecast', fallback_current: 'Current weather (forecast fallback)', off: 'Off', snow: 'Snow', rain: 'Rain', sun: 'Sun', clouds: 'Clouds', partlycloudy: 'Partly cloudy', rain_clouds: 'Rain and clouds', snow_clouds: 'Snow and clouds', fog: 'Fog', wind_clouds: 'Wind and clouds', night: 'Clear night', night_clouds: 'Moon and clouds', hail: 'Hail', sleet: 'Sleet', downpour: 'Heavy rain', storm: 'Thunderstorm', storm_clouds: 'Storm clouds', title: 'Weather effects', profile: 'Profile', choose: 'Choose a profile', loading: 'Waiting for weather profiles…', empty: 'No weather profiles available.', enabled: 'Effects enabled', mode: 'Mode', effect: 'Effect', automatic: 'Automatic', manual: 'Manual', forecast_offset: 'Forecast offset (hours)', speed: 'Speed', size: 'Size', density: 'Density', opacity: 'Opacity', wind: 'Wind', max_fps: 'Maximum FPS', respect_reduced_motion: 'Respect reduced motion', missing: 'Control entity is missing or disabled.', unavailable: 'Control entity is unavailable.', auto: 'Effect follows the weather in automatic mode.', gate: 'Enabled in settings, but paused by the external gate', saving: 'Saving…', error: 'Unable to update', subscribe: 'Unable to load profiles. Retrying…', status: 'Status', source: 'Source', condition: 'Condition', forecast_time: 'Forecast time', weather_entity: 'Weather entity', dashboards: 'Dashboards', integration: 'Integration settings', optionalTitle: 'Title (optional)', notfound: 'Selected profile is not available.', unknown: 'Unknown' },
   hr: { ok: 'Spremno', forecast_fallback: 'Prognoza nije dostupna; koristi se trenutačno vrijeme', weather_unavailable: 'Vremenski podaci nisu dostupni', enable_entity_unavailable: 'Vanjski uvjet nije dostupan', current: 'Trenutačno vrijeme', forecast: 'Prognoza', fallback_current: 'Trenutačno vrijeme (zamjena za prognozu)', off: 'Isključeno', snow: 'Snijeg', rain: 'Kiša', sun: 'Sunce', clouds: 'Oblaci', partlycloudy: 'Djelomično oblačno', rain_clouds: 'Kiša i oblaci', snow_clouds: 'Snijeg i oblaci', fog: 'Magla', wind_clouds: 'Vjetar i oblaci', night: 'Vedra noć', night_clouds: 'Mjesec i oblaci', hail: 'Tuča', sleet: 'Susnježica', downpour: 'Pljusak', storm: 'Grmljavinsko nevrijeme', storm_clouds: 'Olujni oblaci', title: 'Vremenski efekti', profile: 'Profil', choose: 'Odaberite profil', loading: 'Čekanje vremenskih profila…', empty: 'Nema dostupnih vremenskih profila.', enabled: 'Efekti uključeni', mode: 'Način rada', effect: 'Efekt', automatic: 'Automatski', manual: 'Ručno', forecast_offset: 'Odmak prognoze (sati)', speed: 'Brzina', size: 'Veličina', density: 'Gustoća', opacity: 'Neprozirnost', wind: 'Vjetar', max_fps: 'Maksimalni FPS', respect_reduced_motion: 'Poštuj smanjeno kretanje', missing: 'Upravljački entitet nedostaje ili je onemogućen.', unavailable: 'Upravljački entitet nije dostupan.', auto: 'U automatskom načinu efekt prati vrijeme.', gate: 'Uključeno u postavkama, ali zaustavljeno vanjskim uvjetom', saving: 'Spremanje…', error: 'Ažuriranje nije uspjelo', subscribe: 'Profili se ne mogu učitati. Ponovni pokušaj…', status: 'Stanje', source: 'Izvor', condition: 'Vremensko stanje', forecast_time: 'Vrijeme prognoze', weather_entity: 'Vremenski entitet', dashboards: 'Nadzorne ploče', integration: 'Postavke integracije', optionalTitle: 'Naslov (neobavezno)', notfound: 'Odabrani profil nije dostupan.', unknown: 'Nepoznato' },
@@ -15,6 +17,12 @@ Object.assign(LABELS.en, {
 });
 Object.assign(LABELS.hr, {
   heat: 'Vrućina', displayed: 'Trenutačno prikazani efekt / način rada', settings_effect: 'Uredi postavke za efekt', presets: 'Spremljena postavka izgleda', target_changed: 'Efekt za uređivanje promijenjen je drugom kontrolom. Postavka nije spremljena. Provjerite odabrani efekt i pokušajte ponovno.', preset_help: 'Klizači spremaju osnovne postavke odabranog efekta, a ne trenutačno prilagođene vrijednosti. Odabir cilja uređivanja ne mijenja prikazani efekt.', target_missing: 'Za sigurno uređivanje spremljenog izgleda odaberite dostupan ciljni efekt. Ažurirajte ili omogućite entitet za odabir postavki efekta.', runtime: 'Stvarne radne vrijednosti', base: 'Spremljena osnova prikazanog efekta', adaptive: 'Prilagodba vremenu (samo automatski način)', adaptive_weather: 'Prilagodi intenzitet vremenu', adaptive_help: 'Koristi dostupne vremenske podatke samo u automatskom načinu. Ručni način koristi spremljenu postavku bez prilagodbe.', heat_threshold: 'Prag vrućine (°C)', lightning: 'Neobavezni bljeskovi munje', lightning_enabled: 'Omogući bljeskove munje (izričit pristanak)', lightning_interval: 'Razmak bljeskova (sekunde)', lightning_brightness: 'Svjetlina bljeskova (najviše 0,25)', lightning_warning: 'Upozorenje na fotoosjetljivost: bljeskovi munje mogu izazvati napadaje ili nelagodu. Zadano isključeno. Uključite samo ako je sigurno za sve gledatelje ove nadzorne ploče.', global: 'Opće postavke', intensity: 'Prilagođeni intenzitet', temperature_c: 'Temperatura (°C)', cloud_coverage: 'Naoblaka (%)', precipitation_mm_h: 'Oborine (mm/h)', wind_kmh: 'Vjetar (km/h)', precipitation_source: 'Izvor podataka o oborinama', weather_metrics: 'Vremenski podaci', cloud: 'Oblaci', global_help: 'Odmak prognoze i maksimalni FPS primjenjuju se na cijeli profil.', metrics_unknown: 'Nedostupno / nije primijenjeno', none: 'Nedostupno', current_rate: 'Trenutačni intenzitet', hourly_forecast: 'Satna prognoza', forecast_hourly: 'Satna prognoza', forecast_daily: 'Dnevna prognoza', forecast_rate: 'Prognozirani intenzitet', forecast_hourly_amount: 'Satna prognozirana količina', forecast_daily_amount: 'Dnevna prognozirana količina'
+});
+Object.assign(LABELS.en, {
+  general: 'General', night_tab: 'Night', storm_tab: 'Thunderstorm', advanced: 'Advanced status and weather metrics', lightning_enabled: 'Lightning effects (opt-in)', lightning_bolt_enabled: 'Show lightning bolt', lightning_flash_enabled: 'Screen flash (opt-in)', lightning_formation_time: 'Bolt formation time (seconds)', lightning_formation_time_help: 'Smaller values draw the bolt faster. This is separate from its fading duration.', lightning_duration: 'Bolt fading duration (seconds)', lightning_duration_help: 'How long the formed bolt fades, not its drawing speed.', lightning_branches: 'Bolt branches', lightning_thickness: 'Bolt thickness', lightning_glow: 'Bolt glow', lightning_length: 'Bolt length (viewport fraction)', lightning_help: 'Bolt and screen flash are independent, but both require the master switch and are off when motion is disabled.', lightning_active: 'Lightning effects are enabled. Photosensitivity caution; open the Thunderstorm tab.', family_pending: 'The edit target does not match this tab. Select a subtype to edit safely.'
+});
+Object.assign(LABELS.hr, {
+  general: 'Općenito', night_tab: 'Noć', storm_tab: 'Grmljavina', advanced: 'Napredno stanje i vremenski podaci', lightning_enabled: 'Efekti munje (izričit pristanak)', lightning_bolt_enabled: 'Prikaži munju', lightning_flash_enabled: 'Bljesak zaslona (izričit pristanak)', lightning_formation_time: 'Vrijeme iscrtavanja munje (sekunde)', lightning_formation_time_help: 'Manja vrijednost brže iscrtava munju. Odvojeno od trajanja nestajanja.', lightning_duration: 'Trajanje nestajanja munje (sekunde)', lightning_duration_help: 'Koliko dugo iscrtana munja nestaje, a ne brzina iscrtavanja.', lightning_branches: 'Broj grana munje', lightning_thickness: 'Debljina munje', lightning_glow: 'Sjaj munje', lightning_length: 'Duljina munje (udio prikaza)', lightning_help: 'Munja i bljesak zaslona su neovisni, ali oboje zahtijevaju glavni prekidač i ne rade kada je kretanje isključeno.', lightning_active: 'Efekti munje su uključeni. Oprez zbog fotoosjetljivosti; otvorite tab Grmljavina.', family_pending: 'Ciljni efekt ne odgovara ovoj kartici. Odaberite podvrstu za sigurno uređivanje.'
 });
 export const labelsFor = language => LABELS[String(language || '').toLowerCase().startsWith('hr') ? 'hr' : 'en'];
 export const profileId = profile => String(profile?.id ?? profile?.entry_id ?? '');
@@ -41,8 +49,14 @@ function bounds(key, state) {
   const defaults = NUMBERS[key];
   const safe = key.startsWith('lightning_');
   const min = Number(state?.attributes?.min ?? defaults[0]), max = Number(state?.attributes?.max ?? defaults[1]);
-  return [safe ? Math.max(defaults[0], min) : min, safe ? Math.min(defaults[1], max) : max, safe ? defaults[2] : state?.attributes?.step ?? defaults[2]];
+  if (safe) {
+    const low = Number.isFinite(min) ? Math.max(defaults[0], min) : defaults[0];
+    const high = Number.isFinite(max) ? Math.min(defaults[1], max) : defaults[1];
+    return low <= high ? [low, high, defaults[2]] : defaults;
+  }
+  return [min, max, state?.attributes?.step ?? defaults[2]];
 }
+const TAB_CSS = `.tabs{display:flex;gap:4px;overflow-x:auto;overscroll-behavior-inline:contain;padding:5px 2px 9px;margin-top:12px;scrollbar-width:thin}.tabs button{flex:0 0 auto;font:inherit;border:0;border-bottom:3px solid transparent;background:transparent;color:inherit;min-height:44px;padding:10px 12px;border-radius:6px 6px 0 0;cursor:pointer}.tabs button[aria-selected=true]{border-color:var(--primary-color,#03a9f4);font-weight:700;background:var(--secondary-background-color,var(--card-background-color,#e7edf5))}button:focus-visible,summary:focus-visible{outline:3px solid var(--primary-color,#03a9f4);outline-offset:2px}.current{font-size:.9rem;line-height:1.5}summary{cursor:pointer;padding:14px 0}details{margin-top:12px}.panel{min-width:0}`;
 function node(tag, text) { const el = document.createElement(tag); if (text != null) el.textContent = String(text); return el; }
 function release(fn) { if (typeof fn === 'function') { try { Promise.resolve(fn()).catch(() => {}); } catch { /* closed socket */ } } }
 
@@ -96,6 +110,47 @@ class ProfileSubscriber extends BaseElement {
 }
 
 export class WeatherEffectsControlCard extends ProfileSubscriber {
+  constructor() { super(); this._uid = `weather-card-${++cardInstance}`; this._tab = 'general'; this._remembered = new Map(); }
+  _familyMatches(target) { return (TAB_FAMILIES[this._tab] || []).includes(target); }
+  _remember(target) {
+    const family = Object.keys(TAB_FAMILIES).find(id => TAB_FAMILIES[id].includes(target));
+    if (family) this._remembered.set(`${profileId(this.profile)}:${family}`, target);
+  }
+  async selectTab(id) {
+    if (!Object.hasOwn(TAB_FAMILIES, id)) return false;
+    this._editing = false; this._tab = id; this._error = '';
+    const c = controlState(this.hass, this.profile, 'settings_effect');
+    this._remember(c.state?.state);
+    this.render();
+    if (id === 'general' || !c.available) return true;
+    const options = (c.state.attributes?.options || []).filter(value => TAB_FAMILIES[id].includes(value));
+    const remembered = this._remembered.get(`${profileId(this.profile)}:${id}`);
+    const target = options.includes(remembered) ? remembered : options.includes(c.state.state) ? c.state.state : options[0];
+    if (target && target !== c.state.state) await this.commit('settings_effect', target);
+    return true;
+  }
+  _tabs(card) {
+    const tabs = node('div'); tabs.className = 'tabs'; tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', this.labels.presets);
+    const ids = Object.keys(TAB_FAMILIES);
+    for (const id of ids) {
+      const button = node('button', this.labels[`${id}_tab`] || this.labels[id]); button.type = 'button'; button.dataset.tab = id;
+      button.id = `${this._uid}-tab-${id}`; button.setAttribute('role', 'tab');
+      button.setAttribute('aria-selected', String(id === this._tab)); button.setAttribute('aria-controls', `${this._uid}-panel-${id}`);
+      button.tabIndex = id === this._tab ? 0 : -1;
+      button.addEventListener('click', () => { this.selectTab(id); });
+      button.addEventListener('keydown', event => {
+        const index = ids.indexOf(id);
+        const next = event.key === 'Home' ? ids[0] : event.key === 'End' ? ids.at(-1) : event.key === 'ArrowRight' ? ids[(index + 1) % ids.length] : event.key === 'ArrowLeft' ? ids[(index + ids.length - 1) % ids.length] : null;
+        if (next) { event.preventDefault(); this.selectTab(next); this._focusTab(next); }
+      });
+      tabs.append(button);
+    }
+    card.append(tabs);
+  }
+  _focusTab(id) {
+    const button = this.shadowRoot?.querySelector?.(`[data-tab="${id}"]`);
+    button?.focus({ preventScroll: true }); button?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }
   setConfig(config) { this._config = validateConfig(config); this.render(); }
   static getConfigElement() { return globalThis.document?.createElement(`${CARD}-editor`); }
   static getStubConfig() { return { type: TYPE }; }
@@ -110,13 +165,14 @@ export class WeatherEffectsControlCard extends ProfileSubscriber {
     }
     if (this._busy || !control.available || (key === 'effect' && controlState(this.hass, profile, 'mode').state?.state !== 'manual')) return;
     if (SELECTS.includes(key)) { if (!(control.state.attributes?.options || []).includes(String(value))) return; }
-    if (APPEARANCE.includes(key) && !controlState(this.hass, profile, 'settings_effect').available) return;
+    if (APPEARANCE.includes(key) && (!controlState(this.hass, profile, 'settings_effect').available || !this._familyMatches(controlState(this.hass, profile, 'settings_effect').state?.state))) return;
+    if (key === 'settings_effect' && !this._familyMatches(String(value))) return;
     if (key in NUMBERS) {
       const n = Number(value), [min, max] = bounds(key, control.state);
       if (!Number.isFinite(n) || n < min || n > max) return;
     }
     this._busy = true; this._error = ''; this.render();
-    try { await this.hass.callService(...serviceFor(key, value, control.entity_id)); }
+    try { await this.hass.callService(...serviceFor(key, value, control.entity_id)); if (key === 'settings_effect') this._remember(String(value)); }
     catch (error) { this._error = `${this.labels.error}: ${error?.message || String(error)}`; }
     finally { this._busy = false; this.render(); }
   }
@@ -129,25 +185,34 @@ export class WeatherEffectsControlCard extends ProfileSubscriber {
     else if (key in NUMBERS) {
       input = node('input'); input.type = 'range'; const limits = bounds(key, c.state);
       for (const [i, attr] of ['min', 'max', 'step'].entries()) input[attr] = String(limits[i]);
-      input.value = c.available ? c.state.state : input.min;
-      const output = node('output', c.available ? c.state.state : '—'); label.append(output);
+      const value = key.startsWith('lightning_') && c.available ? Math.min(limits[1], Math.max(limits[0], Number(c.state.state))) : c.state?.state;
+      input.value = c.available && Number.isFinite(Number(value)) ? String(value) : input.min;
+      const output = node('output', c.available && Number.isFinite(Number(value)) ? value : '—'); label.append(output);
       input.addEventListener('input', () => { this._editing = true; output.textContent = input.value; });
     } else {
       input = node('select');
-      for (const value of c.state?.attributes?.options || []) { const option = node('option', this.labels[value] || value); option.value = value; input.append(option); }
-      input.value = c.state?.state || '';
+      for (const value of c.state?.attributes?.options || []) {
+        if (key === 'settings_effect' && !this._familyMatches(value)) continue;
+        const option = node('option', this.labels[value] || value); option.value = value; input.append(option);
+      }
+      input.value = key === 'settings_effect' && !this._familyMatches(c.state?.state) ? '' : c.state?.state || '';
     }
     input.addEventListener('focus', () => { this._editing = true; });
     input.dataset.control = key; input.setAttribute('aria-label', this.labels[key]);
     const automatic = key === 'effect' && controlState(this.hass, this.profile, 'mode').state?.state !== 'manual';
     const missingTarget = APPEARANCE.includes(key) && !controlState(this.hass, this.profile, 'settings_effect').available;
-    input.disabled = this._busy || !c.available || automatic || missingTarget;
+    const wrongFamily = APPEARANCE.includes(key) && !this._familyMatches(controlState(this.hass, this.profile, 'settings_effect').state?.state);
+    const noOptions = key === 'settings_effect' && !(c.state?.attributes?.options || []).some(value => this._familyMatches(value));
+    input.disabled = this._busy || !c.available || automatic || missingTarget || wrongFamily || noOptions;
     input.addEventListener('change', () => { this._editing = false; this.commit(key, input.type === 'checkbox' ? input.checked : input.value, expectedEdit); });
     input.addEventListener('blur', () => { if (this._editing) { this._editing = false; this.render(); } });
     if (key in NUMBERS) row.append(input); else label.append(input);
-    const reason = c.reason ? this.labels[c.reason] : automatic ? this.labels.auto : missingTarget ? this.labels.target_missing : '';
-    if (reason) { const help = node('small', reason); help.id = `help-${key}`; input.setAttribute('aria-describedby', help.id); row.append(help); }
-    if (key === 'lightning_enabled') input.setAttribute('aria-describedby', [reason ? `help-${key}` : '', 'lightning-warning'].filter(Boolean).join(' '));
+    const reason = c.reason ? this.labels[c.reason] : automatic ? this.labels.auto : missingTarget ? this.labels.target_missing : wrongFamily || noOptions ? this.labels.family_pending : '';
+    const describedBy = [];
+    if (reason) { const help = node('small', reason); help.id = `${this._uid}-help-${key}`; describedBy.push(help.id); row.append(help); }
+    if (this.labels[`${key}_help`]) { const help = node('small', this.labels[`${key}_help`]); help.id = `${this._uid}-description-${key}`; describedBy.push(help.id); row.append(help); }
+    if (key.startsWith('lightning_')) describedBy.push(`${this._uid}-lightning-warning`);
+    if (describedBy.length) input.setAttribute('aria-describedby', describedBy.join(' '));
     card.append(row);
   }
   _values(card, heading, values, keys, percent = false) {
@@ -162,45 +227,69 @@ export class WeatherEffectsControlCard extends ProfileSubscriber {
   }
   render() {
     if (this._editing) return;
+    const focusedTab = this.shadowRoot?.activeElement?.dataset?.tab;
     const t = this.labels, card = this._root(this._config.title || t.title); if (!card) return;
+    card.append(node('style', TAB_CSS));
     if (this._profiles.length > 1 || this._config.profile) this._profileSelect(card, id => { this._config = { ...this._config, profile: id }; this._error = ''; this.render(); });
     const profile = this.profile;
     if (!profile) this._notice(card, this._subscriptionError ? t.subscribe : !this._loaded ? t.loading : this._config.profile ? t.notfound : this._profiles.length ? t.choose : t.empty, this._subscriptionError);
     else {
-      this._control(card, 'enabled');
-      const enabledState = controlState(this.hass, profile, 'enabled').state;
-      const configured = enabledState ? enabledState.state === 'on' : profile.configured_enabled === true;
-      const gateEntity = profile.gate_entity || profile.enable_entity;
-      if (configured && gateEntity && profile.gate_enabled !== true && (profile.effective_enabled ?? profile.enabled) === false) this._notice(card, `${t.gate} (${gateEntity}).`);
-      card.append(node('h3', t.displayed));
-      this._values(card, `${t.effect}: ${t[profile.effect] || profile.effect || t.unknown}`, { mode: controlState(this.hass, profile, 'mode').state?.state ?? profile.mode }, ['mode']);
-      this._control(card, 'mode'); this._control(card, 'effect');
-      card.append(node('h3', t.presets));
-      this._control(card, 'settings_effect');
-      card.append(node('small', t.preset_help));
-      const numbers = node('div'); numbers.className = 'numbers'; for (const key of APPEARANCE) this._control(numbers, key); card.append(numbers);
-      card.append(node('h3', t.adaptive), node('small', t.adaptive_help));
-      this._control(card, 'adaptive_weather'); this._control(card, 'heat_threshold');
-      card.append(node('h3', t.lightning));
-      const warning = node('p', t.lightning_warning); warning.id = 'lightning-warning'; warning.className = 'notice'; card.append(warning);
-      this._control(card, 'lightning_enabled'); this._control(card, 'lightning_interval'); this._control(card, 'lightning_brightness');
-      card.append(node('h3', t.global), node('small', t.global_help));
-      this._control(card, 'forecast_offset'); this._control(card, 'max_fps'); this._control(card, 'respect_reduced_motion');
-      this._values(card, t.runtime, profile, APPEARANCE);
-      this._values(card, t.base, profile.preset, APPEARANCE);
-      this._values(card, t.intensity, profile.intensity, ['heat', 'cloud', 'rain', 'wind'], true);
-      this._values(card, t.weather_metrics, profile.weather_metrics, ['temperature_c', 'cloud_coverage', 'precipitation_mm_h', 'wind_kmh', 'precipitation_source']);
-      const details = node('dl'); const status = controlState(this.hass, profile, 'status').state;
-      for (const key of ['status', 'effect', 'source', 'condition', 'forecast_time', 'weather_entity', 'dashboards']) {
-        let value = key === 'status' ? status?.attributes?.status ?? profile.status : profile[key];
-        if (['status', 'source', 'effect'].includes(key) && value != null) value = t[value] || value;
-        details.append(node('dt', t[key]), node('dd', Array.isArray(value) ? value.join(', ') || '—' : value ?? '—'));
+      const mode = controlState(this.hass, profile, 'mode').state?.state ?? profile.mode;
+      const readout = node('div', `${t.displayed}: ${t[profile.effect] || profile.effect || t.unknown} / ${t[mode] || mode || t.unknown}`);
+      readout.className = 'current'; readout.setAttribute('role', 'status'); card.append(readout);
+      this._remember(controlState(this.hass, profile, 'settings_effect').state?.state);
+      this._tabs(card);
+      let panel;
+      for (const id of Object.keys(TAB_FAMILIES)) {
+        const section = node('section'); section.className = 'panel'; section.id = `${this._uid}-panel-${id}`;
+        section.setAttribute('role', 'tabpanel'); section.setAttribute('aria-labelledby', `${this._uid}-tab-${id}`);
+        section.hidden = id !== this._tab; card.append(section);
+        if (!section.hidden) panel = section;
       }
-      card.append(details);
+      if (this._tab === 'general') {
+        this._control(panel, 'enabled');
+        const enabledState = controlState(this.hass, profile, 'enabled').state;
+        const configured = enabledState ? enabledState.state === 'on' : profile.configured_enabled === true;
+        const gateEntity = profile.gate_entity || profile.enable_entity;
+        if (configured && gateEntity && profile.gate_enabled !== true && (profile.effective_enabled ?? profile.enabled) === false) this._notice(panel, `${t.gate} (${gateEntity}).`);
+        this._control(panel, 'mode'); this._control(panel, 'effect');
+        this._control(panel, 'adaptive_weather'); panel.append(node('small', t.adaptive_help));
+        const numbers = node('div'); numbers.className = 'numbers';
+        this._control(numbers, 'forecast_offset'); this._control(numbers, 'max_fps'); panel.append(numbers);
+        this._control(panel, 'respect_reduced_motion');
+        const status = controlState(this.hass, profile, 'status').state?.attributes?.status ?? profile.status;
+        this._notice(panel, `${t.status}: ${t[status] || status || t.unknown}`);
+        if (controlState(this.hass, profile, 'lightning_enabled').state?.state === 'on') this._notice(panel, t.lightning_active);
+        const advanced = node('details'); advanced.open = Boolean(this._advancedOpen);
+        advanced.append(node('summary', t.advanced));
+        advanced.addEventListener('toggle', () => { this._advancedOpen = advanced.open; });
+        this._values(advanced, t.runtime, profile, APPEARANCE);
+        this._values(advanced, t.base, profile.preset, APPEARANCE);
+        this._values(advanced, t.intensity, profile.intensity, ['heat', 'cloud', 'rain', 'wind'], true);
+        this._values(advanced, t.weather_metrics, profile.weather_metrics, ['temperature_c', 'cloud_coverage', 'precipitation_mm_h', 'wind_kmh', 'precipitation_source']);
+        const details = node('dl');
+        for (const key of ['source', 'condition', 'forecast_time', 'weather_entity', 'dashboards']) {
+          let value = profile[key]; if (key === 'source' && value != null) value = t[value] || value;
+          details.append(node('dt', t[key]), node('dd', Array.isArray(value) ? value.join(', ') || '—' : value ?? '—'));
+        }
+        advanced.append(details); panel.append(advanced);
+      } else {
+        panel.append(node('h3', t[`${this._tab}_tab`] || t[this._tab]));
+        this._control(panel, 'settings_effect'); panel.append(node('small', t.preset_help));
+        const numbers = node('div'); numbers.className = 'numbers';
+        for (const key of APPEARANCE) this._control(numbers, key); panel.append(numbers);
+        if (this._tab === 'sun') this._control(panel, 'heat_threshold');
+        if (this._tab === 'storm') {
+          panel.append(node('h3', t.lightning));
+          const warning = node('p', t.lightning_warning); warning.id = `${this._uid}-lightning-warning`; warning.className = 'notice'; panel.append(warning, node('small', t.lightning_help));
+          for (const key of ['lightning_enabled', 'lightning_bolt_enabled', 'lightning_flash_enabled', 'lightning_interval', 'lightning_brightness', 'lightning_formation_time', 'lightning_duration', 'lightning_branches', 'lightning_thickness', 'lightning_glow', 'lightning_length']) this._control(panel, key);
+        }
+      }
     }
     if (this._busy) this._notice(card, t.saving);
     if (this._error) this._notice(card, this._error, true);
     const link = node('a', t.integration); link.href = '/config/integrations/integration/weather_effects'; card.append(link);
+    if (focusedTab) this._focusTab(this._tab);
   }
 }
 export class WeatherEffectsControlCardEditor extends ProfileSubscriber {

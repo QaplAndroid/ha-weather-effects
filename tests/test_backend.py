@@ -443,6 +443,46 @@ class ConfigFlowTests(unittest.IsolatedAsyncioTestCase):
         self.hass.data["panels"] = {"wall": SimpleNamespace(component_name="lovelace", sidebar_title="Wall"), "config": SimpleNamespace(component_name="config", sidebar_title="Settings")}
         self.assertEqual(choices(), [{"value": "wall", "label": "Wall (/wall)"}])
 
+    def test_lightning_schema_exact_bounds_defaults_units_and_saved_values(self):
+        expected = {
+            "lightning_interval": ((5, 60, 1), 12, "s"),
+            "lightning_brightness": ((.05, .25, .05), .1, None),
+            "lightning_formation_time": ((.1, 3, .1), .8, "s"),
+            "lightning_duration": ((.3, 2, .1), .7, "s"),
+            "lightning_branches": ((0, 8, 1), 4, None),
+            "lightning_thickness": ((.5, 4, .5), 1.5, None),
+            "lightning_glow": ((0, 1, .1), .6, None),
+            "lightning_length": ((.2, .9, .1), .6, None),
+        }
+        fields = {key.key: (key, value) for key, value in backend.config_flow.schema(self.hass, {}).items()}
+        for key, (bounds, default, unit) in expected.items():
+            with self.subTest(key=key):
+                marker, selector = fields[key]
+                self.assertEqual(backend.const.NUMBER_CONTROLS[key], bounds)
+                self.assertEqual(marker.kwargs["default"], default)
+                self.assertEqual((selector.config["min"], selector.config["max"], selector.config["step"]), bounds)
+                self.assertEqual(selector.config.get("unit_of_measurement"), unit)
+        for key, default in (("lightning_enabled", False), ("lightning_bolt_enabled", True), ("lightning_flash_enabled", True)):
+            self.assertIs(fields[key][0].kwargs["default"], default)
+        saved = {key: bounds[1] for key, (bounds, _, _) in expected.items()}
+        saved.update(lightning_enabled=False, lightning_bolt_enabled=False, lightning_flash_enabled=False)
+        fields = {key.key: key for key in backend.config_flow.schema(self.hass, saved)}
+        for key, value in saved.items():
+            self.assertEqual(fields[key].kwargs["default"], value)
+
+    def test_form_control_validation_rejects_types_nonfinite_bounds_and_steps(self):
+        for key, (low, high, step) in backend.const.NUMBER_CONTROLS.items():
+            for value in (True, "1", None, [], {}, float("nan"), float("inf"), -float("inf"), low - step, high + step, low + step / 2, 10 ** 500):
+                with self.subTest(key=key, value=value):
+                    self.assertEqual(backend.config_flow.validate(self.hass, self.data(**{key: value}))[key], "invalid_number")
+            for value in (low, high, low + step):
+                self.assertNotIn(key, backend.config_flow.validate(self.hass, self.data(**{key: value})))
+        for key in backend.const.SWITCH_CONTROLS:
+            for value in (0, 1, "false", None, [], {}):
+                self.assertEqual(backend.config_flow.validate(self.hass, self.data(**{key: value}))[key], "invalid_boolean")
+            for value in (True, False):
+                self.assertNotIn(key, backend.config_flow.validate(self.hass, self.data(**{key: value})))
+
     async def test_effect_enums_preserve_saved_ids_and_include_every_mapping(self):
         old_effects = ("off", "snow", "rain", "sun", "clouds", "partlycloudy", "rain_clouds", "snow_clouds")
         new_effects = ("fog", "wind", "wind_clouds", "night", "night_clouds", "hail", "sleet", "downpour", "storm", "storm_clouds")

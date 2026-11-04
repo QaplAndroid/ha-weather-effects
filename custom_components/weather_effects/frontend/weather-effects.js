@@ -51,7 +51,9 @@ export function allocateBudget(counts, budget = MAX_PARTICLES) {
 }
 const visualSignature = configs => JSON.stringify(configs.map(c =>
   [c.effect, c.speed, c.size, c.density, c.opacity, c.wind, c.max_fps, c.intensity,
-    c.lightning_enabled, c.lightning_interval, c.lightning_brightness]));
+    c.lightning_enabled, c.lightning_interval, c.lightning_brightness, c.lightning_bolt_enabled,
+    c.lightning_flash_enabled, c.lightning_formation_time, c.lightning_duration, c.lightning_branches,
+    c.lightning_thickness, c.lightning_glow, c.lightning_length]));
 const BLOCKED_ROUTES = new Set(["config", "settings", "developer-tools", "profile", "auth", "onboarding", "lovelace-editor", "editor", "history", "logbook", "energy", "map", "calendar", "todo", "media-browser"]);
 const clamp = (value, low, high, fallback) => {
   const n = typeof value === "number" ? value : Number.NaN;
@@ -86,6 +88,14 @@ export function normalizeConfig(raw) {
       wind: clamp(raw.intensity?.wind, 0, 1, null),
     },
     lightning_enabled: raw.lightning_enabled === true,
+    lightning_bolt_enabled: raw.lightning_bolt_enabled === undefined ? true : raw.lightning_bolt_enabled === true,
+    lightning_flash_enabled: raw.lightning_flash_enabled === undefined ? true : raw.lightning_flash_enabled === true,
+    lightning_formation_time: clamp(raw.lightning_formation_time, 0.1, 3, 0.8),
+    lightning_duration: clamp(raw.lightning_duration, 0.3, 2, 0.7),
+    lightning_branches: Math.round(clamp(raw.lightning_branches, 0, 8, 4)),
+    lightning_thickness: clamp(raw.lightning_thickness, 0.5, 4, 1.5),
+    lightning_glow: clamp(raw.lightning_glow, 0, 1, 0.6),
+    lightning_length: clamp(raw.lightning_length, 0.2, 0.9, 0.6),
     lightning_interval: clamp(raw.lightning_interval, 5, 60, 12),
     lightning_brightness: clamp(raw.lightning_brightness, 0.05, 0.25, 0.10),
   };
@@ -104,33 +114,141 @@ export function activeConfigs(configs, location, reducedMotion = false) {
     && !(reducedMotion && config.respect_reduced_motion));
 }
 
-export const lightningEligible = c => c.lightning_enabled === true && ["storm", "storm_clouds"].includes(c.effect);
-// One monotonic-clock scheduler for the whole overlay, independent of scene rebuilds.
-// Public update/step and timestamps allow deterministic browser and unit safety checks.
+export const lightningEligible = c => c.lightning_enabled === true
+  && (c.lightning_bolt_enabled === true || c.lightning_flash_enabled === true)
+  && (c.effect === "storm" || c.effect === "storm_clouds");
+// All stage times use the performance/RAF clock, in milliseconds. Optional output
+// objects let the renderer reuse storage; callers can inspect the same pure stages.
+export function lightningStage(flash, time, out = {}) {
+  const age = Math.max(0, time - flash.started);
+  out.leader = Math.min(1, age / flash.formationTime);
+  out.returning = age >= flash.formationTime && age < flash.formationTime + flash.duration;
+  const tail = Math.max(0, age - flash.formationTime);
+  out.fade = out.returning ? (1 - tail / flash.duration) ** 2 : 0;
+  // One short smooth wash at the return stroke, never throughout formation.
+  const pulse = tail / Math.min(180, flash.duration);
+  out.wash = out.returning && pulse < 1 ? flash.brightness * Math.sin(Math.PI * pulse) ** 2 : 0;
+  return out;
+}
+
+// Fixed storage for 49 main vertices and eight paths of 13 vertices. No recursive
+// branches, Path2D objects, per-frame arrays, canvases, or geometry generation.
+export class LightningGeometry {
+  constructor() {
+    this.points = new Float32Array(9 * 49 * 2);
+    this.counts = new Uint8Array(9);
+    this.attachments = new Float32Array(9);
+    this.ends = new Float32Array(9);
+    this.pathCount = 0; this.serial = 0;
+  }
+  generate(width, height, length, branches, random = Math.random) {
+    const segments = 32 + Math.floor(random() * 17);
+    const startX = width * (0.3 + random() * 0.4), startY = height * 0.035;
+    const reach = height * clamp(length, 0.2, 0.9, 0.6);
+    this.pathCount = 1 + Math.round(clamp(branches, 0, 8, 4));
+    this.counts.fill(0); this.counts[0] = segments + 1;
+    this.attachments[0] = 0; this.ends[0] = 1;
+    let x = startX;
+    const drift = (random() - 0.5) * reach * 0.23;
+    for (let i = 0; i <= segments; i++) {
+      if (i) x += drift / segments + (random() - 0.5) * reach * 0.065;
+      this.points[i * 2] = Math.min(width * 0.92, Math.max(width * 0.08, x));
+      this.points[i * 2 + 1] = startY + reach * i / segments;
+    }
+    for (let path = 1; path < this.pathCount; path++) {
+      const parent = Math.floor(segments * (0.15 + 0.64 * (path - 0.5) / (this.pathCount - 1)));
+      const attach = parent / segments, count = 7 + Math.floor(random() * 6);
+      const offset = path * 98, side = random() < 0.5 ? -1 : 1;
+      const span = reach * (0.10 + random() * 0.16);
+      this.counts[path] = count + 1; this.attachments[path] = attach;
+      // A small delay after attachment, with enough time to reach the branch tip.
+      this.ends[path] = Math.min(0.99, attach + 0.18 + random() * 0.12);
+      let bx = this.points[parent * 2], by = this.points[parent * 2 + 1];
+      for (let i = 0; i <= count; i++) {
+        if (i) { bx += side * span / count + (random() - 0.5) * span * 0.13; by += span * (0.35 + random() * 0.5) / count; }
+        this.points[offset + i * 2] = Math.max(0, Math.min(width, bx));
+        this.points[offset + i * 2 + 1] = Math.min(height, by);
+      }
+    }
+    this.serial++;
+    return this;
+  }
+  pathProgress(path, leader) {
+    const start = path ? this.attachments[path] + 0.025 : 0;
+    return Math.min(1, Math.max(0, (leader - start) / (this.ends[path] - start)));
+  }
+  trace(ctx, path, leader) {
+    const progress = this.pathProgress(path, leader);
+    if (progress <= 0) return false;
+    const offset = path * 98, extent = progress * (this.counts[path] - 1), whole = Math.floor(extent);
+    ctx.beginPath(); ctx.moveTo(this.points[offset], this.points[offset + 1]);
+    for (let i = 1; i <= whole; i++) ctx.lineTo(this.points[offset + i * 2], this.points[offset + i * 2 + 1]);
+    if (whole < this.counts[path] - 1) {
+      const at = offset + whole * 2, fraction = extent - whole;
+      ctx.lineTo(this.points[at] + (this.points[at + 2] - this.points[at]) * fraction,
+        this.points[at + 1] + (this.points[at + 3] - this.points[at + 1]) * fraction);
+    }
+    return true;
+  }
+  visibleStats(leader, out = {}) {
+    out.paths = 0; out.segments = 0;
+    for (let path = 0; path < this.pathCount; path++) {
+      const progress = this.pathProgress(path, leader);
+      if (progress > 0) { out.paths++; out.segments += Math.ceil(progress * (this.counts[path] - 1)); }
+    }
+    return out;
+  }
+}
+
+// One global monotonic scheduler. Profile order/IDs, rebuilds and settings updates
+// cannot restart an active strike or shorten its already-established cooldown.
 export class LightningScheduler {
   constructor() {
-    this.key = ""; this.nextAt = Infinity; this.lastAt = -Infinity;
-    this.flash = null; this.duration = 220; this.serial = 0;
+    this.key = ""; this.nextAt = Infinity; this.lastAt = -Infinity; this.armedAt = -Infinity;
+    this.flash = null; this.duration = 1500; this.serial = 0;
   }
   update(configs, allowed, now) {
-    const eligible = allowed ? configs.filter(lightningEligible) : [];
-    const interval = eligible.length ? Math.max(5000, Math.min(...eligible.map(c => c.lightning_interval * 1000))) : 0;
-    const brightness = eligible.length ? Math.min(...eligible.map(c => c.lightning_brightness)) : 0;
-    const key = eligible.length ? JSON.stringify([interval, brightness, eligible.map(c => c.effect)]) : "";
-    const changed = key !== this.key;
-    if (changed) {
-      this.key = key; this.flash = null;
-      this.nextAt = interval ? Math.max(now + interval, this.lastAt + interval) : Infinity;
+    let interval = 60000, brightness = 0.25, branches = 8, thickness = 4, glow = 1, length = 0.9;
+    let formationTime = 100, duration = 300, bolt = false, wash = false, count = 0;
+    if (allowed) for (const c of configs) {
+      if (!lightningEligible(c)) continue;
+      count++; bolt ||= c.lightning_bolt_enabled; wash ||= c.lightning_flash_enabled;
+      interval = Math.min(interval, clamp(c.lightning_interval, 5, 60, 12) * 1000);
+      brightness = Math.min(brightness, clamp(c.lightning_brightness, 0.05, 0.25, 0.1));
+      branches = Math.min(branches, Math.round(clamp(c.lightning_branches, 0, 8, 4)));
+      thickness = Math.min(thickness, clamp(c.lightning_thickness, 0.5, 4, 1.5));
+      glow = Math.min(glow, clamp(c.lightning_glow, 0, 1, 0.6));
+      length = Math.min(length, clamp(c.lightning_length, 0.2, 0.9, 0.6));
+      formationTime = Math.max(formationTime, clamp(c.lightning_formation_time, 0.1, 3, 0.8) * 1000);
+      duration = Math.max(duration, clamp(c.lightning_duration, 0.3, 2, 0.7) * 1000);
     }
-    this.interval = interval; this.brightness = brightness;
-    return changed;
+    const wasAllowed = Boolean(this.key);
+    this.key = count ? "enabled" : "";
+    this.interval = count ? Math.max(interval, formationTime + duration + 500) : 0;
+    this.brightness = brightness; this.formationTime = formationTime; this.fadeDuration = duration;
+    this.boltEnabled = bolt; this.flashEnabled = wash; this.branches = branches;
+    this.thickness = thickness; this.glow = glow; this.length = length;
+    if (!count) { this.flash = null; this.nextAt = Infinity; }
+    else if (!wasAllowed) {
+      this.armedAt = now;
+      this.nextAt = Math.max(now + this.interval, this.lastAt + this.interval);
+    } else this.nextAt = Math.max(this.nextAt, Math.max(this.armedAt, this.lastAt) + this.interval);
+    if (this.flash) {
+      // Disabling a visual sub-switch is immediate, never a route around safety.
+      this.flash.boltEnabled &&= bolt; this.flash.flashEnabled &&= wash;
+    }
+    return wasAllowed !== Boolean(this.key);
   }
   step(now) {
     if (!this.key) return null;
-    if (this.flash && now - this.flash.started >= this.duration) this.flash = null;
+    if (this.flash && now - this.flash.started >= this.flash.formationTime + this.flash.duration) this.flash = null;
     if (!this.flash && now >= this.nextAt) {
       this.lastAt = now; this.nextAt = now + this.interval;
-      this.flash = { started: now, brightness: this.brightness, serial: ++this.serial };
+      this.duration = this.formationTime + this.fadeDuration;
+      this.flash = { started: now, brightness: this.brightness, serial: ++this.serial,
+        formationTime: this.formationTime, duration: this.fadeDuration,
+        boltEnabled: this.boltEnabled, flashEnabled: this.flashEnabled, branches: this.branches,
+        thickness: this.thickness, glow: this.glow, length: this.length };
     }
     return this.flash;
   }
@@ -142,7 +260,9 @@ export class WeatherEffectsOverlay {
     this.configs = []; this.active = []; this.scenes = []; this.sprites = new Map();
     this.signature = "";
     this.lightning = new LightningScheduler();
-    this.bolt = new Float32Array(18); this.boltSerial = 0;
+    this.lightningGeometry = new LightningGeometry();
+    this.bolt = this.lightningGeometry.points; this.boltSerial = 0;
+    this.lightningStage = {};
     this.connection = null; this.unsubscribe = null; this.epoch = 0;
     this.pending = false; this.retryAt = 0; this.failures = 0;
     this.running = false; this.frame = null; this.lastFrame = null;
@@ -272,27 +392,37 @@ export class WeatherEffectsOverlay {
     const flash = this.lightning.step(time);
     if (flash && flash.serial !== this.boltSerial) {
       this.boltSerial = flash.serial;
-      const x = this.width * (0.25 + Math.random() * 0.5);
-      for (let i = 0; i < 9; i++) {
-        this.bolt[i * 2] = x + (i ? (Math.random() - 0.5) * this.width * 0.07 : 0);
-        this.bolt[i * 2 + 1] = this.height * (0.07 + i * 0.055);
-      }
+      if (flash.boltEnabled) this.lightningGeometry.generate(this.width, this.height, flash.length, flash.branches);
+      else this.lightningGeometry.pathCount = 0;
     }
     return flash;
   }
-  drawLightning(time) {
+  drawLightning(time = this.now()) {
     const flash = this.stepLightning(time);
-    if (!flash) return;
-    const ctx = this.ctx, age = Math.max(0, (time - flash.started) / this.lightning.duration);
-    // Single smooth pulse; no branches, repeated strokes, secondary pulses or strobe.
-    const fade = (1 - age) ** 2;
-    ctx.globalAlpha = flash.brightness * fade; ctx.fillStyle = "rgb(219,231,255)";
-    ctx.fillRect(0, 0, this.width, this.height);
-    ctx.globalAlpha = Math.min(0.75, flash.brightness * 3) * fade;
-    ctx.strokeStyle = "rgb(224,238,255)"; ctx.lineWidth = 2; ctx.lineCap = "round";
-    ctx.beginPath(); ctx.moveTo(this.bolt[0], this.bolt[1]);
-    for (let i = 1; i < 9; i++) ctx.lineTo(this.bolt[i * 2], this.bolt[i * 2 + 1]);
-    ctx.stroke();
+    if (!flash || !this.ctx) return;
+    const ctx = this.ctx, stage = lightningStage(flash, time, this.lightningStage);
+    if (flash.flashEnabled && stage.wash > 0) {
+      ctx.globalAlpha = stage.wash; ctx.fillStyle = "rgb(219,231,255)";
+      ctx.fillRect(0, 0, this.width, this.height);
+    }
+    if (!flash.boltEnabled || stage.leader <= 0) return;
+    ctx.save(); ctx.lineCap = "round"; ctx.lineJoin = "round";
+    // Dim, steadily propagating leader; a single bright return stroke then fade.
+    const strength = stage.returning ? stage.fade : 0.22;
+    for (let path = 0; path < this.lightningGeometry.pathCount; path++) {
+      if (!this.lightningGeometry.trace(ctx, path, stage.leader)) continue;
+      const branch = path ? 0.58 : 1;
+      if (flash.glow > 0) {
+        ctx.shadowColor = "rgb(119,171,255)"; ctx.shadowBlur = 9 * flash.glow;
+        ctx.globalAlpha = strength * branch * flash.glow * 0.35;
+        ctx.lineWidth = flash.thickness * (path ? 2 : 3);
+        ctx.strokeStyle = "rgb(126,179,255)"; ctx.stroke();
+      }
+      ctx.shadowBlur = 0; ctx.globalAlpha = strength * branch;
+      ctx.lineWidth = flash.thickness * (path ? 0.55 : 1);
+      ctx.strokeStyle = "rgb(231,244,255)"; ctx.stroke();
+    }
+    ctx.restore();
   }
   pause() {
     this.lightning.update([], false, this.now());
@@ -325,8 +455,9 @@ export class WeatherEffectsOverlay {
         heatGlow: layers.includes("sun") && config.intensity.heat > 0 ? 1 : 0,
       };
     });
-    // Reserve two dynamic primitives globally: one bolt and its single wash pulse.
-    const boltBudget = this.active.some(lightningEligible) ? 2 : 0;
+    // Reserve the maximum global strike (main + eight sidebranches + wash),
+    // including an in-flight strike whose settings changed since scene creation.
+    const boltBudget = this.active.some(lightningEligible) ? 10 : 0;
     const budgets = allocateBudget(plans.map(plan => Object.values(plan).reduce((a, b) => a + b, 0)), MAX_PARTICLES - boltBudget);
     this.scenes = this.active.map((config, i) => {
       const counts = allocateBudget(SCENE_ARRAYS.map(key => plans[i][key]), budgets[i]);

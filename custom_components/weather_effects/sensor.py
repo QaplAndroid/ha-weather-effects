@@ -3,7 +3,7 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, LIGHTNING_CONTROLS
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -35,4 +35,4 @@ class WeatherEffectsStatus(CoordinatorEntity, SensorEntity):
         return {key: self.coordinator.data.get(key) for key in (
             "enabled", "mode", "source", "condition", "forecast_offset", "forecast_time",
             "status", "weather_entity", "dashboards", "settings_effect", "preset", "intensity",
-            "weather_metrics", "adaptive_weather", "lightning_enabled", "lightning_interval", "lightning_brightness")}
+            "weather_metrics", "adaptive_weather", *LIGHTNING_CONTROLS)}

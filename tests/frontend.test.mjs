@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 // HA serves an ES module, without requiring a package.json in the integration.
 const source = await readFile(new URL('../custom_components/weather_effects/frontend/weather-effects.js', import.meta.url), 'utf8');
-const { normalizeDashboard, normalizeConfig, effectLayers, matchesDashboard, activeConfigs, WeatherEffectsOverlay, MAX_PARTICLES, EFFECTS, scenePrimitiveCount, allocateBudget, cloudSilhouette, LightningScheduler } =
+const { normalizeDashboard, normalizeConfig, effectLayers, matchesDashboard, activeConfigs, WeatherEffectsOverlay, MAX_PARTICLES, EFFECTS, scenePrimitiveCount, allocateBudget, cloudSilhouette, LightningScheduler, LightningGeometry, lightningStage, lightningEligible } =
   await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 const config = (extra = {}) => normalizeConfig({ id: 'test', enabled: true, dashboards: ['lovelace', 'dashboard-home'], effect: 'snow', ...extra });
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
@@ -20,7 +20,10 @@ function mockEnvironment() {
     };
   };
   const context = new Proxy({
-    clearCount: 0, drawCount: 0, fillRects: [], fillAlphas: [],
+    clearCount: 0, drawCount: 0, fillRects: [], fillAlphas: [], linePoints: [], strokeCount: 0,
+    moveTo(x, y) { this.linePoints.push(['move', x, y]); },
+    lineTo(x, y) { this.linePoints.push(['line', x, y]); },
+    stroke() { this.strokeCount++; },
     clearRect() { this.clearCount++; },
     drawImage(image, ...coords) { assert.ok(image, 'sprite must already exist'); assert.ok(coords.every(Number.isFinite)); this.drawCount++; },
     fillRect(...coords) { this.fillRects.push(coords); this.fillAlphas.push(this.globalAlpha); },
@@ -72,6 +75,26 @@ function mockEnvironment() {
   return { win, doc, context, canvases, raf, intervals, motion, connection, tick };
 }
 
+test('new lightning controls retain strict master opt-in, old-profile migration and hard bounds', () => {
+  const defaults = {lightning_bolt_enabled: true, lightning_flash_enabled: true,
+    lightning_formation_time: 0.8, lightning_duration: 0.7, lightning_branches: 4,
+    lightning_thickness: 1.5, lightning_glow: 0.6, lightning_length: 0.6};
+  for (const [key, value] of Object.entries(defaults)) assert.equal(config()[key], value, key);
+  for (const key of ['lightning_bolt_enabled', 'lightning_flash_enabled']) {
+    for (const value of [1, 'true', null, false]) assert.equal(config({[key]: value})[key], false);
+  }
+  const limits = {lightning_formation_time: [0.1, 3], lightning_duration: [0.3, 2],
+    lightning_branches: [0, 8], lightning_thickness: [0.5, 4], lightning_glow: [0, 1], lightning_length: [0.2, 0.9]};
+  for (const [key, [low, high]] of Object.entries(limits)) {
+    assert.equal(config({[key]: -100})[key], low); assert.equal(config({[key]: 100})[key], high);
+    for (const value of [NaN, Infinity, '1', null]) assert.equal(config({[key]: value})[key], defaults[key]);
+  }
+  assert.equal(config({lightning_branches: 3.6}).lightning_branches, 4);
+  assert.equal(lightningEligible(config({effect: 'storm'})), false);
+  assert.equal(lightningEligible(config({effect: 'storm', lightning_enabled: true})), true, 'old explicit opt-in keeps both sub-switches');
+  assert.equal(lightningEligible(config({effect: 'storm', lightning_enabled: true, lightning_bolt_enabled: false, lightning_flash_enabled: false})), false);
+});
+
 test('intensity and lightning normalization is finite, clamped and strictly opt-in', () => {
   assert.deepEqual(config().intensity, {heat: 0, cloud: null, rain: null, wind: null});
   assert.equal(config().lightning_enabled, false);
@@ -92,7 +115,8 @@ test('one pure lightning scheduler preserves global cooldown across metadata, re
   assert.equal(scheduler.step(4999), null);
   assert.equal(scheduler.step(5000).serial, 1);
   assert.equal(scheduler.step(5100).serial, 1);
-  assert.equal(scheduler.step(5220), null);
+  assert.equal(scheduler.step(5800).formationTime, 800);
+  assert.equal(scheduler.step(6500), null);
   scheduler.update([{...storm, id: 'renamed'}, storm], true, 6000);
   assert.equal(scheduler.nextAt, 10000);
   assert.equal(scheduler.step(9999), null);
@@ -104,7 +128,86 @@ test('one pure lightning scheduler preserves global cooldown across metadata, re
   assert.equal(scheduler.step(24999), null);
   assert.equal(scheduler.step(25000).serial, 3);
   scheduler.update([{...storm, lightning_interval: 12}], true, 25001);
-  assert.equal(scheduler.flash, null); assert.equal(scheduler.nextAt, 37001);
+  assert.equal(scheduler.flash.serial, 3, 'settings do not interrupt an existing strike');
+  assert.equal(scheduler.nextAt, 37000, 'cooldown is measured from the previous strike, not metadata arrival');
+});
+
+test('composite lightning chooses deterministic conservative controls and never overlaps at maximum duration', () => {
+  const a = config({effect: 'storm', lightning_enabled: true, lightning_bolt_enabled: false,
+    lightning_formation_time: 3, lightning_duration: 2, lightning_interval: 5, lightning_brightness: 0.2,
+    lightning_branches: 8, lightning_thickness: 4, lightning_glow: 1, lightning_length: 0.9});
+  const b = config({effect: 'storm_clouds', lightning_enabled: true, lightning_flash_enabled: false,
+    lightning_branches: 2, lightning_thickness: 1, lightning_glow: 0.2, lightning_length: 0.3});
+  const scheduler = new LightningScheduler(), reversed = new LightningScheduler();
+  scheduler.update([a, b], true, 0); reversed.update([b, a], true, 0);
+  assert.equal(scheduler.interval, 5500); assert.equal(scheduler.step(5499), null);
+  const strike = scheduler.step(5500);
+  assert.deepEqual(strike, reversed.step(5500));
+  assert.equal(strike.formationTime, 3000); assert.equal(strike.duration, 2000);
+  assert.equal(strike.boltEnabled, true); assert.equal(strike.flashEnabled, true);
+  assert.equal(strike.brightness, 0.1); assert.equal(strike.branches, 2);
+  assert.equal(strike.thickness, 1); assert.equal(strike.glow, 0.2); assert.equal(strike.length, 0.3);
+  scheduler.update([b, {...a, id: 'renamed'}], true, 5501);
+  assert.equal(scheduler.flash, strike); assert.equal(scheduler.nextAt, 11000);
+  assert.equal(scheduler.step(10499), strike); assert.equal(scheduler.step(10500), null);
+  assert.equal(scheduler.step(10999), null); assert.equal(scheduler.step(11000).serial, 2);
+});
+
+test('leader and delayed branches clip continuously with fixed bounded typed storage', () => {
+  let seed = 42;
+  const rng = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const geometry = new LightningGeometry(), arrays = [geometry.points, geometry.counts, geometry.attachments, geometry.ends];
+  geometry.generate(1200, 800, 0.6, 8, rng);
+  assert.equal(geometry.pathCount, 9); assert.ok(geometry.counts[0] >= 33 && geometry.counts[0] <= 49);
+  assert.ok(Math.abs(geometry.points[(geometry.counts[0] - 1) * 2 + 1] - geometry.points[1] - 480) < 0.01);
+  assert.deepEqual(geometry.visibleStats(0), {paths: 0, segments: 0});
+  let previous = 0;
+  const stats = {}, snapshot = geometry.points.slice(), serial = geometry.serial;
+  const lines = [], ctx = {beginPath() {}, moveTo(x, y) { assert.ok(Number.isFinite(x + y)); }, lineTo(x, y) { lines.push([x, y]); }};
+  for (let path = 1; path < geometry.pathCount; path++) {
+    assert.ok(geometry.counts[path] <= 13);
+    assert.equal(geometry.pathProgress(path, geometry.attachments[path]), 0);
+    assert.equal(geometry.pathProgress(path, geometry.attachments[path] + 0.024), 0);
+    assert.ok(geometry.pathProgress(path, geometry.attachments[path] + 0.04) > 0);
+    assert.equal(geometry.pathProgress(path, 1), 1);
+  }
+  for (let i = 0; i <= 100; i++) {
+    assert.equal(geometry.visibleStats(i / 100, stats), stats);
+    assert.ok(stats.segments >= previous && stats.segments <= 144); previous = stats.segments;
+    for (let path = 0; path < geometry.pathCount; path++) geometry.trace(ctx, path, i / 100);
+  }
+  assert.equal(geometry.serial, serial); assert.deepEqual(geometry.points, snapshot);
+  assert.equal(geometry.visibleStats(1).paths, 9);
+  lines.length = 0; geometry.trace(ctx, 0, 0.5 / (geometry.counts[0] - 1));
+  assert.equal(lines.length, 1);
+  assert.ok(Math.abs(lines[0][0] - (geometry.points[0] + geometry.points[2]) / 2) < 1e-6);
+  assert.ok(Math.abs(lines[0][1] - (geometry.points[1] + geometry.points[3]) / 2) < 1e-6);
+  for (let i = 0; i < 50; i++) geometry.generate(1, 1, 0.9, 8, rng);
+  [geometry.points, geometry.counts, geometry.attachments, geometry.ends].forEach((array, i) => assert.equal(array, arrays[i]));
+  assert.ok(geometry.points.every(Number.isFinite));
+  // Guard the actual frame methods, not just their output, against accidental allocation.
+  for (const method of [LightningGeometry.prototype.trace, LightningGeometry.prototype.pathProgress,
+    WeatherEffectsOverlay.prototype.drawLightning]) assert.doesNotMatch(method.toString(), /new\s+(?:Array|Float\w*Array|Path2D)|createElement|\.slice\(|\.map\(/);
+});
+
+test('formation, one return stroke and brief wash have separate monotonic stages', () => {
+  const flash = {started: 1000, formationTime: 800, duration: 700, brightness: 0.1}, out = {};
+  for (const [time, leader] of [[1000, 0], [1200, 0.25], [1600, 0.75]]) {
+    assert.equal(lightningStage(flash, time, out), out);
+    assert.equal(out.leader, leader); assert.equal(out.returning, false); assert.equal(out.wash, 0);
+  }
+  assert.equal(lightningStage(flash, 1800).fade, 1);
+  assert.equal(lightningStage(flash, 1890).wash, 0.1);
+  let lastFade = 1, peaks = 0, lastWash = 0, rising = true;
+  for (let time = 1800; time <= 2500; time++) {
+    lightningStage(flash, time, out);
+    assert.ok(out.fade <= lastFade && out.wash >= 0 && out.wash <= flash.brightness);
+    if (out.wash < lastWash && rising) { peaks++; rising = false; }
+    if (!rising) assert.ok(out.wash <= lastWash + 1e-12);
+    if (time >= 1980) assert.equal(out.wash, 0);
+    lastWash = out.wash; lastFade = out.fade;
+  }
+  assert.equal(peaks, 1); assert.equal(out.fade, 0); assert.equal(out.returning, false);
 });
 
 test('heat is sun-only, cloud intensity increases darker coverage, rain and wind are not scaled twice', async () => {
@@ -153,7 +256,7 @@ test('lightning obeys opt-in, global intervals, motion override, navigation, vis
   }
   const storms = Array.from({length: 32}, (_, id) => config({id, effect: 'storm', density: 200,
     lightning_enabled: true, lightning_interval: 5, lightning_brightness: 0.25, respect_reduced_motion: false}));
-  conn.callback(storms); env.tick(time += 5000);
+  conn.callback(storms); env.tick(time = Math.max(time + 5000, overlay.lightning.nextAt));
   assert.ok(overlay.lightning.flash);
   assert.ok(overlay.scenes.reduce((sum, s) => sum + scenePrimitiveCount(s), 1) <= MAX_PARTICLES);
   const serial = overlay.lightning.serial, allocations = env.canvases.length, bolt = overlay.bolt;
@@ -162,12 +265,14 @@ test('lightning obeys opt-in, global intervals, motion override, navigation, vis
   assert.equal(overlay.lightning.nextAt, due);
   conn.callback(storms.map(c => ({...c, size: 2})));
   assert.equal(overlay.lightning.nextAt, due, 'visual rebuild cannot reset cooldown');
-  env.tick(time += 250); assert.equal(overlay.lightning.flash, null);
+  env.tick(time += 1500); assert.equal(overlay.lightning.flash, null);
   env.tick(due - 1); assert.equal(overlay.lightning.serial, serial);
   env.context.fillRects.length = 0;
   env.tick(time = due + 50);
   assert.equal(overlay.lightning.serial, serial + 1);
-  assert.equal(env.context.fillRects.length, 1, 'only one wash across 32 profiles');
+  assert.equal(env.context.fillRects.length, 0, 'formation has no screen wash');
+  env.tick(time += 820);
+  assert.equal(env.context.fillRects.length, 1, 'only one return-stroke wash across 32 profiles');
   assert.equal(env.canvases.length, allocations); assert.equal(overlay.bolt, bolt);
   const clear = env.context.clearCount;
   env.motion.matches = true; env.motion.dispatch('change');
@@ -192,7 +297,7 @@ test('lightning obeys opt-in, global intervals, motion override, navigation, vis
     env.tick(time += 100); assert.equal(overlay.lightning.flash, null);
     env.tick(time += 4900); assert.ok(overlay.lightning.flash);
     // End each round without an active pulse, while retaining the cooldown.
-    env.tick(time += 250);
+    env.tick(time += 1500);
   }
   overlay.stop(); assert.equal(overlay.lightning.flash, null);
   assert.equal(overlay.stepLightning(time + 100000), null);
@@ -205,16 +310,92 @@ test('heat, lightning bolt and wash share the global cap and bounded reusable ra
     density: 200, intensity: {heat: 1, cloud: 1}, lightning_enabled: true, lightning_interval: 5,
     lightning_brightness: 0.25})));
   assert.ok(overlay.scenes.some(scene => scene.heat.length));
-  assert.ok(overlay.scenes.reduce((sum, scene) => sum + scenePrimitiveCount(scene), 2) <= MAX_PARTICLES);
+  assert.ok(overlay.scenes.reduce((sum, scene) => sum + scenePrimitiveCount(scene), 10) <= MAX_PARTICLES);
   const allocations = env.canvases.length, bolt = overlay.bolt;
   env.context.fillAlphas.length = 0;
-  overlay.drawLightning(5000); assert.equal(env.context.fillAlphas.at(-1), 0.25);
-  overlay.drawLightning(5110); assert.equal(env.context.fillAlphas.at(-1), 0.0625);
+  overlay.drawLightning(5000); assert.equal(env.context.fillAlphas.length, 0);
+  overlay.drawLightning(5400); assert.equal(env.context.fillAlphas.length, 0);
+  overlay.drawLightning(5890); assert.equal(env.context.fillAlphas.at(-1), 0.25);
+  overlay.drawLightning(5935); assert.ok(Math.abs(env.context.fillAlphas.at(-1) - 0.125) < 1e-9);
   const paints = env.context.fillAlphas.length;
-  overlay.drawLightning(5220); assert.equal(env.context.fillAlphas.length, paints);
-  for (let time = 5300; time < 10000; time += 100) env.tick(time);
+  overlay.drawLightning(5980); assert.equal(env.context.fillAlphas.length, paints);
+  overlay.drawLightning(6500); assert.equal(overlay.lightning.flash, null);
+  for (let time = 6600; time < 10000; time += 100) env.tick(time);
   assert.equal(env.canvases.length, allocations); assert.equal(overlay.bolt, bolt);
   assert.ok(overlay.sprites.size <= 13);
+  overlay.stop();
+});
+
+test('bolt and wash switches render independently under 32-profile master and safety gates', async () => {
+  for (const [bolt, wash] of [[true, false], [false, true], [false, false], [true, true]]) {
+    const env = mockEnvironment(), conn = env.connection(); env.doc.root = {hass: {connection: conn}};
+    const overlay = new WeatherEffectsOverlay(env.win, env.doc).start(); await flush();
+    const profiles = Array.from({length: 32}, (_, id) => config({id, effect: 'storm', density: 200,
+      lightning_enabled: true, lightning_interval: 5, lightning_bolt_enabled: bolt,
+      lightning_flash_enabled: wash, lightning_branches: 8, respect_reduced_motion: false}));
+    conn.callback(profiles);
+    const allocations = env.canvases.length, storage = overlay.bolt;
+    const draw = time => {
+      env.context.fillRects.length = 0; env.context.linePoints.length = 0;
+      overlay.drawLightning(time);
+      return [env.context.linePoints.length, env.context.fillRects.length];
+    };
+    assert.deepEqual(draw(5000), [0, 0]);
+    let counts = draw(5200); assert.equal(counts[0] > 0, bolt); assert.equal(counts[1], 0);
+    const serial = overlay.lightningGeometry.serial;
+    counts = draw(5600); assert.equal(counts[0] > 0, bolt); assert.equal(counts[1], 0);
+    counts = draw(5820); assert.equal(counts[0] > 0, bolt); assert.equal(counts[1], wash ? 1 : 0);
+    assert.ok(overlay.scenes.reduce((n, scene) => n + scenePrimitiveCount(scene), (bolt ? 9 : 0) + (wash ? 1 : 0)) <= MAX_PARTICLES);
+    assert.equal(overlay.lightningGeometry.serial, serial); assert.equal(overlay.bolt, storage);
+    assert.equal(env.canvases.length, allocations);
+    if (!bolt) assert.equal(overlay.lightningGeometry.pathCount, 0);
+    assert.deepEqual(draw(6500), [0, 0]);
+    conn.callback(profiles.map(c => ({...c, lightning_enabled: false})));
+    assert.deepEqual(draw(100000), [0, 0]); assert.equal(overlay.lightning.flash, null);
+    conn.callback(profiles);
+    for (const gate of ['motion', 'hidden', 'route', 'off']) {
+      if (gate === 'motion') env.motion.matches = true;
+      if (gate === 'hidden') env.doc.hidden = true;
+      if (gate === 'route') env.win.location.pathname = '/config';
+      if (gate === 'off') conn.callback(profiles.map(c => ({...c, effect: 'off'})));
+      assert.deepEqual(draw(200000), [0, 0], gate); assert.equal(overlay.lightning.flash, null);
+      env.motion.matches = false; env.doc.hidden = false; env.win.location.pathname = '/lovelace';
+    }
+    overlay.stop(); assert.deepEqual(draw(300000), [0, 0]);
+  }
+});
+
+test('numeric bolt controls affect geometry and fade independently from wash brightness', async () => {
+  const env = mockEnvironment(), conn = env.connection(); env.doc.root = {hass: {connection: conn}};
+  const overlay = new WeatherEffectsOverlay(env.win, env.doc).start(); await flush();
+  let time = 0;
+  const sample = (brightness, thickness, glow, length, formation) => {
+    conn.callback([config({effect: 'storm', lightning_enabled: false})]);
+    env.tick(time += 10000);
+    conn.callback([config({effect: 'storm', lightning_enabled: true, lightning_interval: 5,
+      lightning_brightness: brightness, lightning_thickness: thickness, lightning_glow: glow,
+      lightning_length: length, lightning_branches: 0, lightning_formation_time: formation,
+      lightning_duration: 2})]);
+    overlay.drawLightning(overlay.lightning.nextAt);
+    const flash = overlay.lightning.flash;
+    const strokes = env.context.strokeCount;
+    overlay.drawLightning(flash.started + flash.formationTime + 90);
+    const result = {width: env.context.lineWidth, alpha: env.context.globalAlpha,
+      strokes: env.context.strokeCount - strokes, wash: env.context.fillAlphas.at(-1),
+      reach: overlay.bolt[(overlay.lightningGeometry.counts[0] - 1) * 2 + 1] - overlay.bolt[1], flash};
+    overlay.drawLightning(flash.started + flash.formationTime + flash.duration - 1);
+    assert.equal(overlay.lightning.flash, flash);
+    overlay.drawLightning(flash.started + flash.formationTime + flash.duration);
+    assert.equal(overlay.lightning.flash, null);
+    return result;
+  };
+  const a = sample(0.05, 0.5, 0, 0.2, 0.1), b = sample(0.25, 4, 1, 0.9, 3);
+  assert.equal(a.width, 0.5); assert.equal(b.width, 4);
+  assert.equal(a.alpha, b.alpha, 'screen brightness never dims or amplifies the bolt');
+  assert.equal(a.strokes, 1); assert.equal(b.strokes, 2, 'outer glow is a single subtle extra stroke');
+  assert.equal(a.wash, 0.05); assert.equal(b.wash, 0.25);
+  assert.ok(Math.abs(a.reach - 160) < 0.01); assert.ok(Math.abs(b.reach - 720) < 0.01);
+  assert.equal(a.flash.formationTime, 100); assert.equal(b.flash.formationTime, 3000);
   overlay.stop();
 });
 
