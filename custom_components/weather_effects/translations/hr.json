@@ -23,7 +23,7 @@
           "cloud_spread": "Raspršenost oblaka (%)",
           "respect_reduced_motion": "Poštuj postavku smanjenog kretanja uređaja",
           "max_fps": "Najveći broj sličica u sekundi",
-          "settings_effect": "Uredi postavke efekta",
+          "settings_effect": "Ciljna komponenta (kompatibilnost)",
           "adaptive_weather": "Prilagodi intenzitet vremenskim podacima",
           "heat_threshold": "Prag vrućine (°C)",
           "lightning_enabled": "Uključi efekte munja (upozorenje na fotosenzitivnost)",
@@ -44,7 +44,7 @@
           "enable_entity": "Neobavezno: odaberi input_boolean.christmasmode ili drugi prekidač. Efekti tada rade samo dok je uključen. Isprazni polje za uklanjanje uvjeta.",
           "forecast_offset": "0 = trenutačno vrijeme; +1 do +72 = najbliža satna prognoza. Izvan raspona prognoze ili kod greške koristi se trenutačno stanje (vidi dijagnostički senzor).",
           "effect": "Koristi se samo u ručnom načinu. Automatski način bira efekt prema vremenskom entitetu.",
-          "cloud_top": "Početna gornja granica središta oblaka (0 = vrh zaslona). Posebne vrijednosti uređuju se na kartici. Ne smije prijeći donju granicu; rubovi oblaka mogu izlaziti izvan pojasa središta.",
+          "cloud_top": "Početna gornja granica središta oblaka (0 = vrh zaslona). Zajedničke vrijednosti uređuju se na tabu Oblaci. Ne smije prijeći donju granicu; rubovi oblaka mogu izlaziti izvan pojasa središta.",
           "cloud_bottom": "Početna donja granica središta oblaka (100 = dno zaslona). Najprije povećaj ovu vrijednost za oblake niže na zaslonu. Mora biti barem kao gornja granica.",
           "cloud_spread": "Početni raspored: 0 = slučajno, 100 = jače raspoređivanje i usklađeno kretanje. Vrlo veliki/gusti oblaci i dalje se mogu preklapati. Magla je zasebna.",
           "respect_reduced_motion": "Zaustavi efekte ako uređaj traži smanjeno kretanje. Munje su UVIJEK isključene uz smanjeno kretanje, čak i ako je ovaj prekidač isključen.",
@@ -61,11 +61,11 @@
           "lightning_thickness": "Debljina svijetle jezgre munje u CSS pikselima, 0,5–4.",
           "lightning_glow": "Meki vanjski sjaj, 0–1; ne mijenja svjetlinu bljeska zaslona.",
           "lightning_length": "Doseg glavne munje kao udio visine zaslona: 0,2–0,9, zadano 0,6.",
-          "speed": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici.",
-          "size": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici.",
-          "density": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici.",
-          "opacity": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici.",
-          "wind": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici."
+          "speed": "Početna/zamjenska vrijednost za komponente bez posebnih postavki. Svaki tab kartice uređuje svoju zajedničku komponentu u svim kombinacijama.",
+          "size": "Početna/zamjenska vrijednost za komponente bez posebnih postavki. Svaki tab kartice uređuje svoju zajedničku komponentu u svim kombinacijama.",
+          "density": "Početna/zamjenska vrijednost za komponente bez posebnih postavki. Svaki tab kartice uređuje svoju zajedničku komponentu u svim kombinacijama.",
+          "opacity": "Početna/zamjenska vrijednost za komponente bez posebnih postavki. Svaki tab kartice uređuje svoju zajedničku komponentu u svim kombinacijama.",
+          "wind": "Početna/zamjenska vrijednost za komponente bez posebnih postavki. Svaki tab kartice uređuje svoju zajedničku komponentu u svim kombinacijama."
         },
         "description": "Odaberi gdje i kako se prikazuju vremenski efekti. Sve postavke možeš kasnije promijeniti."
       }
@@ -104,7 +104,7 @@
           "cloud_spread": "Raspršenost oblaka (%)",
           "respect_reduced_motion": "Poštuj postavku smanjenog kretanja uređaja",
           "max_fps": "Najveći broj sličica u sekundi",
-          "settings_effect": "Uredi postavke efekta",
+          "settings_effect": "Ciljna komponenta (kompatibilnost)",
           "adaptive_weather": "Prilagodi intenzitet vremenskim podacima",
           "heat_threshold": "Prag vrućine (°C)",
           "lightning_enabled": "Uključi efekte munja (upozorenje na fotosenzitivnost)",
@@ -125,7 +125,7 @@
           "enable_entity": "Neobavezno: odaberi input_boolean.christmasmode ili drugi prekidač. Efekti tada rade samo dok je uključen. Isprazni polje za uklanjanje uvjeta.",
           "forecast_offset": "0 = trenutačno vrijeme; +1 do +72 = najbliža satna prognoza. Izvan raspona prognoze ili kod greške koristi se trenutačno stanje (vidi dijagnostički senzor).",
           "effect": "Koristi se samo u ručnom načinu. Automatski način bira efekt prema vremenskom entitetu.",
-          "cloud_top": "Početna gornja granica središta oblaka (0 = vrh zaslona). Posebne vrijednosti uređuju se na kartici. Ne smije prijeći donju granicu; rubovi oblaka mogu izlaziti izvan pojasa središta.",
+          "cloud_top": "Početna gornja granica središta oblaka (0 = vrh zaslona). Zajedničke vrijednosti uređuju se na tabu Oblaci. Ne smije prijeći donju granicu; rubovi oblaka mogu izlaziti izvan pojasa središta.",
           "cloud_bottom": "Početna donja granica središta oblaka (100 = dno zaslona). Najprije povećaj ovu vrijednost za oblake niže na zaslonu. Mora biti barem kao gornja granica.",
           "cloud_spread": "Početni raspored: 0 = slučajno, 100 = jače raspoređivanje i usklađeno kretanje. Vrlo veliki/gusti oblaci i dalje se mogu preklapati. Magla je zasebna.",
           "respect_reduced_motion": "Zaustavi efekte ako uređaj traži smanjeno kretanje. Munje su UVIJEK isključene uz smanjeno kretanje, čak i ako je ovaj prekidač isključen.",
@@ -142,11 +142,11 @@
           "lightning_thickness": "Debljina svijetle jezgre munje u CSS pikselima, 0,5–4.",
           "lightning_glow": "Meki vanjski sjaj, 0–1; ne mijenja svjetlinu bljeska zaslona.",
           "lightning_length": "Doseg glavne munje kao udio visine zaslona: 0,2–0,9, zadano 0,6.",
-          "speed": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici.",
-          "size": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici.",
-          "density": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici.",
-          "opacity": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici.",
-          "wind": "Početna/zamjenska vrijednost za efekte bez spremljenog profila. Posebne postavke po efektu uređuju se na dashboard kartici."
+          "speed": "Početna/zamjenska vrijednost za komponente bez posebnih postavki. Svaki tab kartice uređuje svoju zajedničku komponentu u svim kombinacijama.",
+          "size": "Početna/zamjenska vrijednost za komponente bez posebnih postavki. Svaki tab kartice uređuje svoju zajedničku komponentu u svim kombinacijama.",
+          "density": "Početna/zamjenska vrijednost za komponente bez posebnih postavki. Svaki tab kartice uređuje svoju zajedničku komponentu u svim kombinacijama.",
+          "opacity": "Početna/zamjenska vrijednost za komponente bez posebnih postavki. Svaki tab kartice uređuje svoju zajedničku komponentu u svim kombinacijama.",
+          "wind": "Početna/zamjenska vrijednost za komponente bez posebnih postavki. Svaki tab kartice uređuje svoju zajedničku komponentu u svim kombinacijama."
         },
         "description": "Odaberi gdje i kako se prikazuju vremenski efekti. Sve postavke možeš kasnije promijeniti."
       }
@@ -267,7 +267,7 @@
         }
       },
       "settings_effect": {
-        "name": "Uredi postavke efekta",
+        "name": "Ciljna komponenta (kompatibilnost)",
         "state": {
           "off": "Isključeno",
           "snow": "Snijeg",

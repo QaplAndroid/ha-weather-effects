@@ -36,4 +36,4 @@ class WeatherEffectsStatus(CoordinatorEntity, SensorEntity):
             "enabled", "mode", "source", "condition", "forecast_offset", "forecast_time",
             "status", "weather_entity", "dashboards", "settings_effect", "preset", "intensity",
             "weather_metrics", "adaptive_weather", "cloud_top", "cloud_bottom", "cloud_spread",
-            "saved_presets", *LIGHTNING_CONTROLS)}
+            "saved_presets", "appearance_model", "layer_sources", "layer_presets", "layer_settings", *LIGHTNING_CONTROLS)}

@@ -30,7 +30,7 @@ const walk = element => [element, ...element.children.flatMap(walk)];
 const control = (card, key) => walk(card.shadowRoot).find(el => el.dataset.control === key);
 const text = card => walk(card.shadowRoot).map(el => el.textContent || '').join(' ');
 const showTab = (card, id) => { card._editing = false; card._tab = id; card.render(); };
-const effects = ['off', ...Object.values(mod.TAB_FAMILIES).flat()];
+const effects = ['off', 'sun', 'clouds', 'partlycloudy', 'rain', 'rain_clouds', 'snow', 'snow_clouds', 'fog', 'wind', 'wind_clouds', 'night', 'night_clouds', 'hail', 'sleet', 'downpour', 'storm', 'storm_clouds'];
 const lightningNumbers = { lightning_interval: [5, 60, 1], lightning_brightness: [0.05, 0.25, 0.05], lightning_formation_time: [0.1, 3, 0.1], lightning_duration: [0.3, 2, 0.1], lightning_branches: [0, 8, 1], lightning_thickness: [0.5, 4, 0.5], lightning_glow: [0, 1, 0.1], lightning_length: [0.2, 0.9, 0.1] };
 function dom() {
   globalThis.document = { createElement: tag => new Element(tag) };
@@ -49,7 +49,7 @@ function fixture() {
   const connection = { connected: true, calls: 0, cleanups: 0,
     subscribeMessage(cb, msg) { assert.deepEqual(msg, { type: 'weather_effects/subscribe' }); this.calls++; this.callback = cb; return Promise.resolve(() => this.cleanups++); },
   };
-  const profile = { id: 'one', title: '<img src=x>', controls, configured_enabled: true, effective_enabled: false, gate_entity: 'input_boolean.gate', effect: 'rain', source: 'weather', condition: 'rainy', weather_entity: 'weather.home', forecast_time: '2026-11-01T12:00Z', dashboards: ['lovelace'] };
+  const profile = { appearance_model: 'components_v1', layer_sources: { rain: 'rain' }, layer_presets: { rain: { speed: 1.3 } }, layer_settings: { rain: { speed: 2.8 } }, id: 'one', title: '<img src=x>', controls, configured_enabled: true, effective_enabled: false, gate_entity: 'input_boolean.gate', effect: 'rain', source: 'weather', condition: 'rainy', weather_entity: 'weather.home', forecast_time: '2026-11-01T12:00Z', dashboards: ['lovelace'] };
   const hass = { language: 'en', states, connection, callService: async (...args) => { calls.push(args); } };
   const card = new Card(); card.setConfig({ type: 'custom:weather-effects-control-card' }); card.hass = hass; card._profiles = [profile]; card._loaded = true; card.render();
   return { card, profile, hass, connection, calls };
@@ -196,23 +196,6 @@ test('all effect options have HR/EN labels and can be selected through native co
   }
 });
 
-test('settings target remains editable in automatic mode, distinct from runtime and saved base', async () => {
-  const { card, hass, profile, calls } = fixture();
-  hass.states['select.mode'].state = 'automatic'; hass.states['select.settings_effect'].state = 'snow';
-  hass.states['number.speed'].state = '2.2';
-  Object.assign(profile, { effect: 'rain', settings_effect: 'snow', speed: 2.8, preset: { speed: 1.3 }, intensity: { heat: 0, cloud: 0.4, rain: 0.75, wind: null }, weather_metrics: { temperature_c: 12, cloud_coverage: 40, precipitation_mm_h: 3.4, wind_kmh: 21, precipitation_source: 'forecast_hourly_amount' } });
-  card.hass = hass;
-  assert.equal(control(card, 'effect').disabled, true);
-  assert.match(text(card), /Actual runtime values/); assert.match(text(card), /Saved base for displayed effect/);
-  for (const value of ['2.8', '1.3', '75%', 'Temperature (°C)', 'Cloud coverage (%)', 'Precipitation (mm/h)', 'Wind (km/h)', 'Hourly forecast amount']) assert.ok(text(card).includes(value), value);
-  showTab(card, 'snow');
-  assert.equal(control(card, 'settings_effect').disabled, false);
-  assert.equal(control(card, 'speed').value, '2.2');
-  assert.match(text(card), /Currently displayed effect/); assert.match(text(card), /Edit settings for effect/);
-  await card.commit('settings_effect', 'snow'); await card.commit('speed', 2.4); await card.commit('effect', 'snow');
-  assert.deepEqual(calls, [['select', 'select_option', { entity_id: 'select.settings_effect', option: 'snow' }], ['number', 'set_value', { entity_id: 'number.speed', value: 2.4 }]]);
-  await card.commit('settings_effect', 'not-an-effect'); assert.equal(calls.length, 2);
-});
 
 test('adaptive and lightning controls use standard services with hard safety bounds and persistent warning', async () => {
   const { card, calls } = fixture(); showTab(card, 'storm');
@@ -232,30 +215,7 @@ test('adaptive and lightning controls use standard services with hard safety bou
   assert.match(text(card), /Photosensitivity warning/);
 });
 
-test('legacy profiles explain disabled new controls and never conflate saved preset with effective runtime', async () => {
-  const { card, profile, calls } = fixture();
-  for (const key of ['settings_effect', 'adaptive_weather', 'lightning_enabled', 'heat_threshold', 'lightning_interval', 'lightning_brightness']) delete profile.controls[key];
-  card.render(); assert.equal(control(card, 'adaptive_weather').disabled, true);
-  showTab(card, 'storm');
-  for (const key of ['settings_effect', 'lightning_enabled', 'speed']) assert.equal(control(card, key).disabled, true);
-  assert.match(text(card), /missing or disabled/); assert.match(text(card), /safely edit saved appearance/); assert.match(text(card), /Photosensitivity warning/);
-  await card.commit('speed', 2); await card.commit('lightning_enabled', true); assert.equal(calls.length, 0);
-  delete profile.controls; card.hass = { language: 'hr' };
-  assert.match(text(card), /fotoosjetljivost/); assert.equal(control(card, 'settings_effect').disabled, true);
-});
 
-test('registry IDs route native services without becoming user-facing control labels', async () => {
-  const { card, profile, hass, calls } = fixture();
-  for (const [key, id] of [['settings_effect', 'select.living_room_effect_settings_2'], ['adaptive_weather', 'switch.living_room_adaptive_2'], ['lightning_brightness', 'number.living_room_flashes_2']]) {
-    hass.states[id] = hass.states[profile.controls[key]]; delete hass.states[profile.controls[key]]; profile.controls[key] = id;
-  }
-  card.hass = hass;
-  assert.equal(control(card, 'adaptive_weather').attributes['aria-label'], 'Adapt intensity to weather');
-  showTab(card, 'snow'); assert.equal(control(card, 'settings_effect').attributes['aria-label'], 'Edit settings for effect');
-  assert.doesNotMatch(text(card), /living_room/);
-  await card.commit('settings_effect', 'snow'); await card.commit('adaptive_weather', true); await card.commit('lightning_brightness', 0.1);
-  assert.deepEqual(calls.map(call => call[2].entity_id), ['select.living_room_effect_settings_2', 'switch.living_room_adaptive_2', 'number.living_room_flashes_2']);
-});
 
 test('range focus and drag survive hass updates without writes until change', async () => {
   const { card, hass, calls } = fixture(); showTab(card, 'rain'); const range = control(card, 'density');
@@ -271,10 +231,10 @@ test('stale preset slider refuses writes when another client changes the shared 
   assert.equal(control(card, 'speed'), range, 'in-progress edit remains visible until commit');
   range.fire('change'); await flush();
   assert.equal(calls.length, 0); assert.match(text(card), /changed in another control/); assert.match(text(card), /No preset was saved/);
-  assert.equal(control(card, 'settings_effect').value, '');
+  assert.equal(control(card, 'settings_effect'), undefined);
   assert.equal(control(card, 'speed').disabled, true);
   showTab(card, 'snow');
-  assert.equal(control(card, 'settings_effect').value, 'snow');
+  assert.equal(control(card, 'settings_effect'), undefined);
   const fresh = control(card, 'speed'); fresh.value = '1.7'; fresh.fire('change'); await flush();
   assert.equal(calls.length, 1); assert.equal(calls[0][2].value, 1.7);
   hass.language = 'hr'; card.hass = { ...hass };
@@ -320,63 +280,8 @@ test('tabs have unique linked ARIA IDs, roving tabindex, keyboard wrapping and f
   assert.equal(await card.selectTab('off'), false);
 });
 
-test('every family routes only edit-target native selects, filters all combinations, and preserves actual effect', async () => {
-  const { card, hass, profile, calls } = fixture();
-  const actual = { effect: profile.effect, mode: hass.states['select.mode'].state, enabled: hass.states['switch.enabled'].state };
-  for (const [family, options] of Object.entries(mod.TAB_FAMILIES)) {
-    if (family === 'general') continue;
-    calls.length = 0; await card.selectTab(family);
-    assert.ok(calls.every(call => call[0] === 'select' && call[2].entity_id === 'select.settings_effect'));
-    for (const option of options) {
-      hass.states['select.settings_effect'].state = option; card.hass = { ...hass };
-      assert.deepEqual(control(card, 'settings_effect').children.map(el => el.value), options);
-      assert.equal(control(card, 'settings_effect').value, option); assert.equal(control(card, 'speed').disabled, false);
-      const count = calls.length; await card.commit('settings_effect', option); assert.equal(calls.length, count + 1);
-      for (const wrong of effects.filter(value => !options.includes(value))) await card.commit('settings_effect', wrong);
-      assert.equal(calls.length, count + 1, `Reject foreign options for ${family}`);
-    }
-    assert.equal(Boolean(control(card, 'heat_threshold')), family === 'sun');
-    assert.equal(Boolean(control(card, 'lightning_enabled')), family === 'storm');
-    assert.match(text(card), /Currently displayed effect.*Rain \/ Manual/);
-  }
-  assert.deepEqual({ effect: profile.effect, mode: hass.states['select.mode'].state, enabled: hass.states['switch.enabled'].state }, actual);
-});
 
-test('remembered subtypes are per-card and per-profile, valid-only, with no preset writes on navigation', async () => {
-  const { card, hass, profile, calls } = fixture();
-  profile.preset = { speed: 1.7, density: 40 }; const preset = JSON.stringify(profile.preset);
-  hass.states['select.settings_effect'].state = 'downpour'; await card.selectTab('rain');
-  assert.equal(calls.length, 0); await card.selectTab('snow');
-  hass.states['select.settings_effect'].state = 'snow_clouds'; card.hass = hass;
-  await card.selectTab('rain'); assert.equal(calls.at(-1)[2].option, 'downpour');
-  hass.states['select.settings_effect'].state = 'downpour'; card.hass = hass;
-  await card.selectTab('snow'); assert.equal(calls.at(-1)[2].option, 'snow_clouds');
-  hass.states['select.settings_effect'].attributes.options = effects.filter(value => value !== 'snow_clouds');
-  await card.selectTab('snow'); assert.equal(calls.at(-1)[2].option, 'snow');
-  assert.ok(calls.every(call => call[0] === 'select')); assert.equal(JSON.stringify(profile.preset), preset);
-  const other = fixture(); await other.card.selectTab('snow'); assert.equal(other.calls.at(-1)[2].option, 'snow');
-  assert.equal(other.card._remembered.has('one:rain'), true); assert.equal(other.card._remembered.get('one:rain'), 'rain');
-  card._profiles = [{ ...profile, id: 'two' }]; hass.states['select.settings_effect'].state = 'rain';
-  await card.selectTab('snow'); assert.equal(calls.at(-1)[2].option, 'snow');
-});
 
-test('failed, unconfirmed, unavailable and external edit-target changes cannot write another family preset', async () => {
-  const { card, hass, calls } = fixture();
-  hass.callService = async (...args) => { calls.push(args); throw new Error('Denied target'); };
-  await card.selectTab('snow'); assert.match(text(card), /Denied target/);
-  assert.equal(control(card, 'settings_effect').value, ''); assert.equal(control(card, 'speed').disabled, true);
-  await card.commit('speed', 2); assert.equal(calls.length, 1);
-  hass.callService = async (...args) => calls.push(args);
-  await card.selectTab('snow'); assert.equal(control(card, 'speed').disabled, true, 'Service success is not an HA state acknowledgement');
-  await card.commit('speed', 2); assert.equal(calls.length, 2);
-  hass.states['select.settings_effect'].state = 'snow'; card.hass = hass;
-  assert.equal(control(card, 'speed').disabled, false);
-  hass.states['select.settings_effect'].state = 'rain_clouds'; card.hass = hass;
-  assert.equal(control(card, 'speed').disabled, true); assert.equal(control(card, 'settings_effect').value, '');
-  await card.commit('speed', 2); assert.equal(calls.length, 2);
-  hass.states['select.settings_effect'].state = 'unavailable'; await card.selectTab('rain'); assert.equal(calls.length, 2);
-  assert.equal(control(card, 'settings_effect').disabled, true); assert.equal(control(card, 'speed').disabled, true);
-});
 
 test('all lightning controls use standard service classification and hard frontend bounds with localized descriptions', async () => {
   const { card, hass, calls } = fixture(); showTab(card, 'storm');
@@ -517,32 +422,176 @@ test('a newer summary wins over pending CRUD response metadata', async () => {
   await pending; assert.equal(presetElement(card, 'presetSelect').value, ''); assert.equal(presetElement(card, 'presetSelect').children.length, 1);
 });
 
-test('cloud subsection appears only for cloud-bearing effects in their own family, separate from base five', async () => {
-  const { card, hass } = fixture();
-  const cloudEffects = ['clouds', 'partlycloudy', 'rain_clouds', 'snow_clouds', 'wind_clouds', 'night_clouds', 'hail', 'sleet', 'downpour', 'storm', 'storm_clouds'];
-  for (const [family, options] of Object.entries(mod.TAB_FAMILIES)) for (const effect of options) {
-    hass.states['select.settings_effect'].state = effect; showTab(card, family);
-    for (const key of ['cloud_top', 'cloud_bottom', 'cloud_spread']) assert.equal(Boolean(control(card, key)), cloudEffects.includes(effect), effect);
-    const base = walk(card.shadowRoot).find(el => el.className === 'numbers'); assert.equal(base.children.length, 5);
+
+
+const componentLinks = card => walk(card.shadowRoot).filter(el => el.dataset.componentTab);
+const retryBinding = card => walk(card.shadowRoot).find(el => el.dataset.componentRetry);
+const componentNumbers = ['speed', 'size', 'density', 'opacity', 'wind', 'cloud_top', 'cloud_bottom', 'cloud_spread'];
+const compositions = {
+  off: {}, sun: { sun: 'sun' }, clouds: { clouds: 'clouds' }, partlycloudy: { sun: 'sun', clouds: 'clouds' },
+  rain: { rain: 'rain' }, rain_clouds: { rain: 'rain', clouds: 'clouds' }, downpour: { rain: 'rain', clouds: 'clouds' },
+  snow: { snow: 'snow' }, snow_clouds: { snow: 'snow', clouds: 'clouds' }, fog: { fog: 'fog' },
+  wind: { wind: 'wind' }, wind_clouds: { wind: 'wind', clouds: 'clouds' }, night: { night: 'night' }, night_clouds: { night: 'night', clouds: 'clouds' },
+  hail: { hail: 'hail', clouds: 'clouds' }, sleet: { rain: 'rain', snow: 'snow', clouds: 'clouds' },
+  storm: { rain: 'rain', wind: 'wind', clouds: 'clouds' }, storm_clouds: { clouds: 'clouds' },
+};
+
+test('all 18 actual effects expose runtime-owned component jump buttons, never an edit dropdown', async () => {
+  const { card, hass, profile, calls } = fixture();
+  for (const effect of effects) {
+    profile.effect = effect; profile.layer_sources = compositions[effect]; card.hass = hass;
+    assert.deepEqual(componentLinks(card).map(el => el.dataset.componentTab), Object.values(compositions[effect]), effect);
+    for (const link of componentLinks(card)) {
+      assert.ok(link.textContent.includes('settings')); const target = link.dataset.componentTab;
+      link.fire('click'); await flush(); assert.equal(card._tab, target);
+      assert.equal(control(card, 'settings_effect'), undefined);
+      assert.ok(calls.every(call => call[2].entity_id === 'select.settings_effect'));
+      assert.equal(profile.effect, effect); assert.equal(hass.states['select.mode'].state, 'manual'); assert.equal(hass.states['switch.enabled'].state, 'on');
+      showTab(card, 'general');
+    }
+    assert.deepEqual(control(card, 'effect').children.map(el => el.value), effects);
   }
-  hass.states['select.settings_effect'].state = 'clouds'; showTab(card, 'rain'); assert.equal(control(card, 'cloud_top'), undefined);
-  showTab(card, 'clouds'); assert.match(text(card), /refer to cloud centers/); assert.match(text(card), /cannot guarantee/);
-  hass.language = 'hr'; card.hass = hass; assert.match(text(card), /središta oblaka/);
 });
 
-test('cloud percentages have dynamic center bounds, step five, native services and stale/family guards', async () => {
-  const { card, hass, calls, profile } = fixture(); hass.states['select.settings_effect'].state = 'clouds'; showTab(card, 'clouds');
+test('canonical tab arrays have one fixed source each; special tabs never bind any target', async () => {
+  const { card, hass, calls } = fixture(); assert.equal(Object.keys(mod.TAB_FAMILIES).length, 11);
+  for (const [tab, sources] of Object.entries(mod.TAB_FAMILIES)) {
+    calls.length = 0; hass.states['select.settings_effect'].state = 'downpour'; await card.selectTab(tab);
+    assert.deepEqual(sources, ['general', 'sleet', 'storm'].includes(tab) ? [] : [tab]);
+    assert.equal(control(card, 'settings_effect'), undefined);
+    if (sources.length) {
+      assert.deepEqual(calls, [['select', 'select_option', { entity_id: 'select.settings_effect', option: tab }]]);
+      assert.equal(control(card, 'speed').disabled, true, 'Service success is not an HA acknowledgement');
+      hass.states['select.settings_effect'].state = tab; card.hass = hass; assert.equal(control(card, 'speed').disabled, false);
+      const count = calls.length;
+      for (const wrong of effects.filter(value => value !== tab)) await card.commit('settings_effect', wrong);
+      assert.equal(calls.length, count);
+    } else { assert.equal(calls.length, 0); assert.equal(control(card, 'speed'), undefined); }
+  }
+});
+
+test('Rain and clouds actual weather edits fixed Rain and shared Clouds, never the compound target', async () => {
+  const { card, hass, profile, calls } = fixture();
+  profile.effect = 'rain_clouds'; profile.layer_sources = compositions.rain_clouds;
+  hass.states['select.settings_effect'].state = 'rain_clouds'; hass.states['select.mode'].state = 'automatic';
+  await card.selectTab('rain'); assert.equal(calls.at(-1)[2].option, 'rain'); assert.equal(control(card, 'speed').disabled, true);
+  hass.states['select.settings_effect'].state = 'rain'; card.hass = hass;
+  await card.commit('speed', 1.8); assert.equal(calls.at(-1)[2].value, 1.8);
+  componentLinks(card).find(el => el.dataset.componentTab === 'clouds').fire('click'); await flush(); assert.equal(calls.at(-1)[2].option, 'clouds');
+  hass.states['select.settings_effect'].state = 'clouds'; card.hass = hass;
+  await card.commit('cloud_spread', 70); assert.equal(calls.at(-1)[2].value, 70);
+  assert.equal(profile.effect, 'rain_clouds'); assert.equal(hass.states['select.mode'].state, 'automatic');
+  assert.ok(calls.every(call => !['select.effect', 'select.mode', 'switch.enabled'].includes(call[2].entity_id)));
+});
+
+test('every component binding handles failure, unconfirmed, missing, unavailable and absent-option targets with retry', async () => {
+  for (const tab of Object.keys(mod.TAB_FAMILIES).filter(id => mod.TAB_FAMILIES[id].length)) {
+    const { card, hass, profile, calls } = fixture(); hass.states['select.settings_effect'].state = 'off';
+    hass.callService = async (...args) => { calls.push(args); throw new Error('Denied target'); };
+    await card.selectTab(tab); assert.match(text(card), /Denied target/); assert.ok(retryBinding(card));
+    assert.equal(control(card, 'speed').disabled, true); await card.commit('speed', 2); assert.equal(calls.length, 1);
+    hass.callService = async (...args) => calls.push(args);
+    retryBinding(card).fire('click'); await flush(); assert.equal(calls.length, 2); assert.equal(control(card, 'speed').disabled, true);
+    hass.states['select.settings_effect'].state = tab; card.hass = hass; assert.equal(control(card, 'speed').disabled, false);
+    hass.states['select.settings_effect'].attributes.options = effects.filter(id => id !== tab); card.hass = hass;
+    assert.equal(control(card, 'speed').disabled, true); assert.ok(retryBinding(card)); await card.commit('speed', 2); assert.equal(calls.length, 2);
+    hass.states['select.settings_effect'].attributes.options = effects;
+    for (const state of ['unknown', 'unavailable']) {
+      hass.states['select.settings_effect'].state = state; await card.selectTab(tab);
+      assert.equal(control(card, 'speed').disabled, true); assert.match(text(card), /unavailable/); assert.ok(retryBinding(card));
+    }
+    delete profile.controls.settings_effect; await card.selectTab(tab);
+    assert.match(text(card), /missing or disabled/); assert.match(text(card), /enable it in the integration/); assert.equal(calls.length, 2);
+  }
+});
+
+test('Sleet is help-only and Storm has lightning globals only, with shared component links in HR/EN', async () => {
+  const { card, calls, hass } = fixture(); await card.selectTab('sleet'); assert.equal(calls.length, 0);
+  assert.match(text(card), /no independent or hidden appearance parameters/);
+  assert.deepEqual(componentLinks(card).slice(-3).map(el => el.dataset.componentTab), ['clouds', 'rain', 'snow']);
+  for (const key of componentNumbers) assert.equal(control(card, key), undefined);
+  await card.selectTab('storm'); assert.equal(calls.length, 0);
+  assert.deepEqual(componentLinks(card).slice(-3).map(el => el.dataset.componentTab), ['clouds', 'wind', 'rain']);
+  for (const key of componentNumbers) assert.equal(control(card, key), undefined);
+  assert.ok(control(card, 'lightning_enabled')); assert.match(text(card), /Photosensitivity warning/);
+  hass.language = 'hr'; card.hass = hass; assert.match(text(card), /Postavke: Oblaci/);
+  await card.selectTab('sleet'); assert.match(text(card), /Nema neovisne ni skrivene/);
+});
+
+test('cloud three controls belong exclusively to Clouds and enforce bounds and stale drag guards', async () => {
+  const { card, hass, profile, calls } = fixture();
+  for (const tab of Object.keys(mod.TAB_FAMILIES)) {
+    hass.states['select.settings_effect'].state = tab; showTab(card, tab);
+    for (const key of ['cloud_top', 'cloud_bottom', 'cloud_spread']) assert.equal(Boolean(control(card, key)), tab === 'clouds', tab);
+  }
+  hass.states['select.settings_effect'].state = 'clouds'; showTab(card, 'clouds');
   assert.equal(control(card, 'cloud_top').max, '30'); assert.equal(control(card, 'cloud_bottom').min, '10');
   for (const [key, value] of Object.entries({ cloud_top: 10, cloud_bottom: 30, cloud_spread: 80 })) {
-    assert.equal(control(card, key).value, String(value)); assert.equal(control(card, key).step, '5'); assert.match(control(card, key).attributes['aria-label'], /%/);
+    assert.equal(control(card, key).value, String(value)); assert.equal(control(card, key).step, '5');
     await card.commit(key, value); assert.deepEqual(calls.at(-1), ['number', 'set_value', { entity_id: `number.${key}`, value }]);
   }
-  const count = calls.length; for (const [key, value] of [['cloud_top', 35], ['cloud_bottom', 5], ['cloud_spread', -1], ['cloud_spread', 101]]) await card.commit(key, value); assert.equal(calls.length, count);
+  const count = calls.length;
+  for (const [key, value] of [['cloud_top', 35], ['cloud_bottom', 5], ['cloud_spread', -1], ['cloud_spread', 101]]) await card.commit(key, value);
+  assert.equal(calls.length, count);
   const stale = control(card, 'cloud_top'); stale.fire('focus'); hass.states['select.settings_effect'].state = 'rain_clouds'; card.hass = { ...hass }; stale.value = '15'; stale.fire('change'); await flush();
   assert.equal(calls.length, count); assert.match(text(card), /changed in another control/);
-  showTab(card, 'rain'); const range = control(card, 'cloud_bottom'); range.fire('focus'); hass.states['number.cloud_top'].state = '40'; card.hass = { ...hass }; range.value = '35'; range.fire('change'); await flush(); assert.equal(calls.length, count);
-  hass.states['select.settings_effect'].state = 'rain'; await card.commit('cloud_spread', 70); assert.equal(calls.length, count);
-  hass.states['select.settings_effect'].state = 'rain_clouds'; delete profile.controls.cloud_spread; card.render(); assert.equal(control(card, 'cloud_spread').disabled, true);
+  hass.states['select.settings_effect'].state = 'clouds'; showTab(card, 'clouds');
+  const range = control(card, 'cloud_bottom'); range.fire('focus'); hass.states['number.cloud_top'].state = '40'; card.hass = { ...hass }; range.value = '35'; range.fire('change'); await flush(); assert.equal(calls.length, count);
+  delete profile.controls.cloud_spread; card.render(); assert.equal(control(card, 'cloud_spread').disabled, true);
+  assert.match(text(card), /refer to cloud centers/); assert.match(text(card), /cannot guarantee/);
+});
+
+test('missing or incompatible runtime model disables components but preserves native globals and named CRUD', async () => {
+  const { card, hass, profile, calls, requests } = presetFixture();
+  for (const model of [undefined, 'legacy', 'components_v2']) {
+    profile.appearance_model = model; showTab(card, 'rain'); assert.match(text(card), /Update Weather Effects and restart Home Assistant/);
+    assert.equal(control(card, 'speed').disabled, true);
+    const count = calls.length; await card.commit('speed', 2); await card.selectTab('snow'); assert.equal(calls.length, count);
+    showTab(card, 'general'); await card.commit('enabled', false); await card.commit('mode', 'manual'); await card.commit('effect', 'sleet');
+    assert.equal(calls.length, count + 3); assert.equal(control(card, 'effect').children.length, 18);
+    choosePreset(card, ''); namePreset(card, 'Compatible save'); assert.equal(await card.managePreset('save'), true);
+    showTab(card, 'storm'); assert.equal(control(card, 'lightning_enabled').disabled, false); await card.commit('lightning_enabled', false);
+  }
+  assert.equal(requests.length, 3); hass.language = 'hr'; card.hass = hass; assert.match(text(card), /ponovno pokrenite Home Assistant/);
+});
+
+test('all component sliders reject external stale bindings and route registry IDs without exposing them', async () => {
+  for (const tab of Object.keys(mod.TAB_FAMILIES).filter(id => mod.TAB_FAMILIES[id].length)) {
+    const { card, hass, profile, calls } = fixture();
+    const id = 'select.living_room_effect_settings_2'; hass.states[id] = hass.states['select.settings_effect']; delete hass.states['select.settings_effect']; profile.controls.settings_effect = id;
+    hass.states[id].state = tab; showTab(card, tab);
+    const slider = control(card, 'speed'); slider.fire('focus'); slider.value = '2'; slider.fire('input');
+    hass.states[id].state = tab === 'rain' ? 'snow' : 'rain'; card.hass = { ...hass };
+    assert.equal(control(card, 'speed'), slider); slider.fire('change'); await flush();
+    assert.equal(calls.length, 0); assert.match(text(card), /changed in another control/); assert.equal(control(card, 'speed').disabled, true);
+    retryBinding(card).fire('click'); await flush(); assert.deepEqual(calls.at(-1), ['select', 'select_option', { entity_id: id, option: tab }]);
+    assert.doesNotMatch(text(card), /living_room/);
+  }
+});
+
+test('advanced displays component saved bases and effective values, not flat compound values', () => {
+  const { card, profile } = fixture(); profile.effect = 'rain_clouds'; profile.speed = 99; profile.preset = { speed: 98 };
+  profile.layer_presets = { rain: { speed: 1.7 }, clouds: { cloud_spread: 65 } };
+  profile.layer_settings = { rain: { speed: 2.1 }, clouds: { cloud_spread: 70 } }; card.render();
+  assert.match(text(card), /Saved component bases · Rain/); assert.match(text(card), /Effective component values · Clouds/);
+  for (const value of ['1.7', '2.1', '65', '70']) assert.ok(text(card).includes(value));
+  assert.doesNotMatch(text(card), /99|98|Saved base for displayed effect/);
+});
+
+test('component tabs show only meaningful renderer controls while native appearance fields remain compatible', async () => {
+  const { card, hass, calls } = fixture();
+  for (const component of Object.keys(mod.TAB_FAMILIES).filter(id => mod.TAB_FAMILIES[id].length)) {
+    hass.states['select.settings_effect'].state = component; showTab(card, component);
+    const visible = componentNumbers.filter(key => control(card, key));
+    const expected = component === 'sun' ? ['speed', 'size', 'opacity'] : component === 'night' ? ['speed', 'size', 'density', 'opacity'] : component === 'clouds' ? componentNumbers : componentNumbers.slice(0, 5);
+    assert.deepEqual(visible, expected, component);
+    assert.equal(Boolean(control(card, 'heat_threshold')), component === 'sun');
+  }
+  // A single Sun body has no density, and neither Sun nor Night drifts in wind.
+  // Native services still exist for old automations/presets; only misleading UI is hidden.
+  hass.states['select.settings_effect'].state = 'sun'; showTab(card, 'sun');
+  await card.commit('density', 30); await card.commit('wind', 1);
+  assert.deepEqual(calls.map(call => call[2].entity_id), ['number.density', 'number.wind']);
 });
 
 test.after(() => { for (const [key, value] of Object.entries(globals)) { if (value === undefined) delete globalThis[key]; else globalThis[key] = value; } });

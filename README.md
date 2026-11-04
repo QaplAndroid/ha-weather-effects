@@ -2,7 +2,7 @@
 
 Snijeg, kiša, sunce i oblaci kao animirani sloj preko **odabranih dashboarda**. Vlastita integracija (custom component), nije Supervisor add-on. Bez HTML kartice, card_mod-a, Lovelace resursa i ručnog uređivanja dashboard YAML-a.
 
-**Verzija 0.6.0 — imenovani vizualni preseti, tvorničke postavke te položaj i raspršenost oblaka po efektu.** Kod i simulacije provjereni su lokalno; nije pokrenut stvarni Home Assistant niti provjerena instalacija na tvojoj instanci. Ciljane API mogućnosti: HA 2025.6+ (`async_register_static_paths`, options flow, `weather.get_forecasts`). Kompatibilnost svake HA verzije nije potvrđena.
+**Verzija 0.7.0 — ispravljene kombinacije: svaki vremenski sloj koristi postavke svojeg taba, bez dodatnog dropdowna.** Kod i simulacije provjereni su lokalno; nije pokrenut stvarni Home Assistant niti provjerena instalacija na tvojoj instanci. Ciljane API mogućnosti: HA 2025.6+ (`async_register_static_paths`, options flow, `weather.get_forecasts`). Kompatibilnost svake HA verzije nije potvrđena.
 
 ## Instalacija kroz HACS (custom repository)
 
@@ -19,7 +19,7 @@ HACS instalaciju također treba potvrditi na stvarnoj instanci; lokalni testovi 
 
 ## Ručna instalacija (alternativa)
 
-1. Preuzmi `weather-effects-0.6.0.zip` sa stranice [Releases](https://github.com/QaplAndroid/ha-weather-effects/releases) i raspakiraj ga na računalu.
+1. Preuzmi `weather-effects-0.7.0.zip` sa stranice [Releases](https://github.com/QaplAndroid/ha-weather-effects/releases) i raspakiraj ga na računalu.
 2. Kopiraj njegovu mapu `custom_components/weather_effects` u HA konfiguracijsku mapu, tako da dobiješ `/config/custom_components/weather_effects/manifest.json`. Ako `custom_components` već postoji, kopiraj samo podmapu `weather_effects` u njega. Nemoj prepisivati druge integracije.
    - Koristi npr. Samba share ili Studio Code Server. Konfiguracijska mapa je ista ona u kojoj se nalazi `configuration.yaml`; na Container/Core instalaciji može biti na drugoj host putanji.
 3. **Ponovno pokreni Home Assistant**, ne samo ponovno učitaj YAML.
@@ -28,7 +28,7 @@ HACS instalaciju također treba potvrditi na stvarnoj instanci; lokalni testovi 
 6. Osvježi preglednik. U Companion aplikaciji po potrebi potpuno zatvori i ponovno otvori prikaz ili očisti frontend cache. Integracija sama registrira JS modul; nemoj ga dodatno dodavati među dashboard resurse.
 7. Kad potvrdiš da nova integracija radi, ukloni staru conditional/html-card karticu s pahuljicama da se efekti ne udvostručuju. `html-card`/`card_mod` ne moraš uklanjati ako ih koristiš drugdje.
 
-Opće postavke su u **Weather Effects → Konfiguriraj**, a zasebne postavke svakog efekta uređuju se kontrolnom karticom ili standardnim HA entitetima. Promjene se šalju otvorenim preglednicima bez ponovnog pokretanja HA-a.
+Opće postavke su u **Weather Effects → Konfiguriraj**, a zajedničke postavke vremenskih komponenti uređuju se kontrolnom karticom ili standardnim HA entitetima. Promjene se šalju otvorenim preglednicima bez ponovnog pokretanja HA-a.
 
 ## Kontrolni dashboard bez YAML-a (novo u 0.2.0)
 
@@ -36,7 +36,7 @@ Integracija sada daje **Weather Effects Control Card** koja se može dodati kroz
 
 ### Ako već imaš raniju verziju
 
-U HACS-u ažuriraj **Weather Effects** na 0.6.0 (po potrebi provjeri nova izdanja ili ponovno preuzmi), restartaj HA i potpuno osvježi preglednik. Ne trebaš brisati integraciju ni ponovno stvarati profil. Novi `switch`, `select` i `number` entiteti dodaju se pri pokretanju. Kod ručne instalacije zamijeni mapu integracije sadržajem novog ZIP-a.
+U HACS-u ažuriraj **Weather Effects** na 0.7.0 (po potrebi provjeri nova izdanja ili ponovno preuzmi), restartaj HA i potpuno osvježi preglednik. Ne trebaš brisati integraciju ni ponovno stvarati profil. Novi `switch`, `select` i `number` entiteti dodaju se pri pokretanju. Kod ručne instalacije zamijeni mapu integracije sadržajem novog ZIP-a.
 
 ### Dodavanje posebnog dashboarda
 
@@ -51,7 +51,7 @@ Kartica također može stajati na bilo kojem postojećem dashboardu; ne mora bit
 ### Što se podešava na kartici
 
 - Uključeno/isključeno, ručni/automatski način i ručni efekt.
-- **Uredi postavke za efekt**: zasebna brzina, veličina, gustoća, neprozirnost i vjetar za odabrani efekt, uz tri dodatna klizača položaja/raspršenosti ako efekt sadrži oblake.
+- Svaki tab uređuje svoju **komponentu**, ne zasebnu skrivenu kombinaciju: brzinu, veličinu, gustoću, neprozirnost i vjetar gdje su primjenjivi. **Oblaci** imaju i tri klizača položaja/raspršenosti. Na Suncu nema neprimjenjive gustoće/vjetra, a na Noći nema vjetra.
 - **Općenito → Upravitelj imenovanih vizualnih postavki**: spremanje, učitavanje, brisanje, preimenovanje i nepromjenjive tvorničke postavke.
 - Prilagodba vremenskim podacima i prag prikaza vrućine.
 - Na tabu **Grmljavina**: izričito uključivanje efekata munja, zasebna munja/bljesak, vrijeme nastajanja, trajanje nestajanja, grananje, debljina, sjaj, doseg, razmak i jačina bljeska.
@@ -68,7 +68,9 @@ Ako je glavni prekidač uključen, a `input_boolean.christmasmode` isključen, e
 
 Kartica se otvara na **Općenito**: uključivanje, stvarno prikazani efekt/način, prilagodba vremenu, prognozni pomak, FPS i smanjeno kretanje. Tehničke vrijednosti i vremenski podaci su u sklopivom pregledu, ne zauzimaju stalno cijelu karticu.
 
-Zasebni tabovi su **Sunce, Oblaci, Kiša, Snijeg, Magla, Vjetar, Noć, Tuča, Susnježica i Grmljavina**. Unutar vrste bira se točna kombinacija, npr. na Kiši: Kiša, Kiša i oblaci ili Pljusak; na Snijegu: Snijeg ili Snijeg i oblaci. Svaka kombinacija i dalje ima svoje spremljene vrijednosti. Prag vrućine je na Suncu, a sve postavke animacije munja na Grmljavini.
+Tabovi **Sunce, Oblaci, Kiša, Snijeg, Magla, Vjetar, Noć i Tuča** izravno uređuju svoje zajedničke komponente. Nema dropdowna „Uredi postavke za efekt” niti zasebnih skrivenih postavki za kombinacije. **Susnježica** objašnjava sastav i daje poveznice na Kišu/Snijeg/Oblake; **Grmljavina** daje poveznice na svoje slojeve i posebne kontrole munje. Prag vrućine ostaje na Suncu.
+
+Ispod trenutačnog efekta kartica prikazuje gumbe za njegove stvarne komponente. Primjer: dok radi **Kiša i oblaci**, gumbi vode na **Postavke: Kiša** i **Postavke: Oblaci**. Odabirom gumba ili taba ne mijenja se stvarno vrijeme.
 
 Odabir taba mijenja samo cilj uređivanja, **ne uključuje efekt, ne mijenja ručni/automatski način i ne uključuje munje**. Tab je lokalni prikaz te kartice; HA cilj uređivanja ostaje zajednički profil. Ako se cilj promijeni izvana, kartica neće dopustiti da klizač od vidljive vrste zapisuje u drugu vrstu.
 
@@ -82,25 +84,42 @@ Ako želiš vlastiti raspored, dodaj te entitete kroz standardnu HA **Entities**
 
 Ako kartice nema u pretrazi, prvo provjeri da je integracija učitana, restartaj HA i potpuno osvježi/ponovno otvori klijent. Prikaz, editor i HACS ažuriranje još treba potvrditi na stvarnoj HA instanci.
 
-## Zasebne postavke svakog efekta (novo u 0.4.0)
+## Zajedničke postavke komponenti (ispravak u 0.7.0)
 
-1. Na kartici odaberi tab **Snijeg** i željenu varijantu, npr. **Snijeg i oblaci**.
-2. Podesi pet klizača. Vrijednosti se spremaju odmah po završetku pomicanja.
-3. Otvori tab **Kiša**, odaberi varijantu i postavi drukčiju brzinu, gustoću itd. Povratak na Snijeg vraća njegove vrijednosti.
+Prethodni model zasebnih preseta za `rain`, `rain_clouds` itd. bio je zbunjujući: uređivanje Kiše nije mijenjalo kišu u Kiši i oblacima. Sada kombinacije imaju **neovisne slojeve**, svaki sa svojim postavkama i vremenom animacije.
 
-Automatski `rainy` koristi **Kiša i oblaci**, a `pouring` **Pljusak**: za taj prikaz uredi baš taj izbor, ne zasebni efekt Kiša bez oblaka.
+| Prikazani efekt | Tabovi koji upravljaju njegovim slojevima |
+| --- | --- |
+| Sunce i oblaci | Sunce + Oblaci |
+| Kiša i oblaci | Kiša + Oblaci |
+| Snijeg i oblaci | Snijeg + Oblaci |
+| Vjetar i oblaci | Vjetar + Oblaci |
+| Noć i oblaci | Noć + Oblaci |
+| Tuča | Tuča + Oblaci |
+| Susnježica | Kiša + Snijeg + Oblaci |
+| Pljusak | Kiša + Oblaci; zadržan je ugrađeni jači pljusak |
+| Grmljavinsko nevrijeme | Kiša + Vjetar + Oblaci, uz opcionalne munje |
+| Olujni oblaci bez kiše | Vjetar + Oblaci, uz opcionalne munje |
 
-Cilj uređivanja nije isto što i trenutačno prikazani efekt. U automatskom načinu možeš urediti Snijeg dok je trenutačno sunčano, bez promjene vremena na zaslonu. Ručni odabir efekta također odabire njegov profil uređivanja; promjena samo cilja uređivanja ne mijenja prikazani efekt.
+**Za automatski `rainy` uredi tab Kiša za kapljice, a Oblaci za oblake.** Nema dodatnog izbora varijante. Promjena gustoće/neprozirnosti/veličine kiše ne mijenja oblačni sloj; vrijedi i obrnuto. Izmjena nepromijenjenih drugih slojeva ne resetira njihove čestice ili sat animacije. Iznimka je nužna preraspodjela zajedničkog budžeta pri jako velikom ukupnom broju čestica; ukupni limit ostaje 800.
 
-Stare spremljene vrijednosti se ne brišu: služe kao početne vrijednosti za efekte/parametre bez vlastite postavke. U općoj formi **Konfiguriraj** pet starih klizača i dalje predstavlja te naslijeđene početne vrijednosti, ne uređuje odabrani posebni profil. Spremanje opće forme ne briše zasebne postavke efekata. Sve ostaje spremljeno nakon restarta.
+Na tabu Snijeg možeš uređivati pahuljice dok je trenutačno sunčano: ne mijenja se ručni/automatski način ni stvarni efekt. Ručni izbor stvarnog efekta ostaje samo na Općenito. Pojedini sloj dobiva vremensku prilagodbu zasebno, pa jača kiša više ne množi gustoću ili neprozirnost oblaka. U naprednom pregledu osnova i primijenjene vrijednosti prikazane su po aktivnoj komponenti.
 
-Kartica odvojeno prikazuje spremljenu osnovu i trenutačno primijenjene vrijednosti. Automatska prilagodba nikad ne prepisuje spremljene profile.
+### Postojeće postavke i imenovani preseti
+
+Ništa se ne briše pri čitanju starih postavki. Postojeći zapis osnovne komponente (npr. `rain` ili `clouds`) ima prednost kao cjelina; njegove nedostajuće vrijednosti uzimaju se iz naslijeđenih općih postavki. Ako zapis komponente ne postoji, koristi se prvi odgovarajući stari zapis kombinacije. Za Kišu je redoslijed Kiša i oblaci → Pljusak → Grmljavina → Susnježica; za Snijeg Snijeg i oblaci → Susnježica. Za Oblake prednost imaju Kiša i oblaci, Snijeg i oblaci, Sunce i oblaci, Vjetar i oblaci, Noć i oblaci, Tuča, Pljusak, Susnježica pa grmljavinske varijante.
+
+Prvo uređivanje takve naslijeđene komponente sprema njezine razriješene vrijednosti pod osnovnu komponentu; **stari zapisi kombinacija ostaju sačuvani kao kompatibilnosna kopija**. Naknadne izmjene osnovne komponente vrijede u svim kombinacijama. Kod prvog uređivanja Tuče zasebno se sačuva dotadašnji izgled Oblaka kako se stari zajednički zapis Tuče ne bi pretvorio u novu vezu između dva sloja.
+
+Stari imenovani preseti ostaju učitljivi, uz ista pravila prijelaza. Ne može se istodobno zadržati više proturječnih starih izgleda oblaka u različitim kombinacijama i novi zajednički tab Oblaci: od 0.7.0 izvor je jedna zajednička komponenta. Nakon provjere izgleda možeš ponovno spremiti željeni imenovani preset. Tvornički reset vraća početne vizualne postavke kao prije, bez brisanja biblioteke preseta.
+
+Opća forma **Konfiguriraj** i dalje uređuje naslijeđene početne vrijednosti, ne prepisuje posebne postavke komponenti. Sve ostaje spremljeno nakon restarta. Kartica traži novi backend model; ako klijent još vidi stari runtime, prikazuje uputu za restart/refresh i ne nudi prividno ispravne kontrole.
 
 **Više klijenata i automatizacije:** nativni cilj uređivanja je zajednički za cijeli profil, nije zaseban po pregledniku. Prvo postavi `select` cilja, zatim odgovarajući `number`. Kartica odbija završetak povlačenja ako je u međuvremenu primijetila promjenu cilja s drugog klijenta. To je provjera prije slanja, ne atomska transakcija između više HA servisnih poziva; izbjegni paralelno uređivanje istog profila iz više klijenata/automatizacija.
 
 ## Imenovani vizualni preseti i tvorničke postavke (novo u 0.6.0)
 
-Automatsko spremanje klizača i dalje radi kao prije. Novi imenovani preseti dodatno spremaju **snimku svih spremljenih vizualnih postavki profila**: osam parametara izgleda za svaki efekt, ručni efekt/cilj uređivanja, prilagodbu vremenu, prag vrućine, FPS, smanjeno kretanje i parametre munje. Spremaju se osnovne postavke, ne trenutačni vremenski multiplikatori ili točne pozicije animiranih čestica.
+Automatsko spremanje klizača i dalje radi kao prije. Novi imenovani preseti dodatno spremaju **snimku svih spremljenih vizualnih postavki profila**: postavke osam komponenti (uključujući položaj oblaka), ručni efekt/cilj uređivanja, prilagodbu vremenu, prag vrućine, FPS, smanjeno kretanje i parametre munje. Spremaju se osnovne postavke, ne trenutačni vremenski multiplikatori ili točne pozicije animiranih čestica.
 
 Na tabu **Općenito**:
 
@@ -121,7 +140,7 @@ Upravitelj traži HA administratorski račun. Bez njega su njegove akcije zaklju
 
 ## Položaj i raspršenost oblaka (novo u 0.6.0)
 
-Na tabu **Oblaci**, kao i kod svake kombinacije koja sadrži oblake, dostupni su:
+Na tabu **Oblaci** dostupne su zajedničke postavke oblačnog sloja za sve kombinacije:
 
 | Postavka | Raspon · zadano | Značenje |
 | --- | --- | --- |
@@ -129,7 +148,7 @@ Na tabu **Oblaci**, kao i kod svake kombinacije koja sadrži oblake, dostupni su
 | Donja središta oblaka | 0–100% · 30% | Najniža dopuštena središta; 100 je dno zaslona |
 | Razmak oblaka | 0–100% · 80% | 0 daje slučajan raspored, 100 snažnije raspoređuje i usklađuje kretanje |
 
-Sve tri vrijednosti spremaju se **zasebno za točno odabrani efekt** i ulaze u imenovane presete. Primjer: Kiša i oblaci može ostati pri vrhu, a Oblaci se mogu protezati do 90% visine. Čista kiša/snijeg/sunce/vjetar/noć bez oblaka te magla nemaju taj odjeljak. Broj oblaka i dalje podešava **Gustoća**, a dimenzije **Veličina**.
+Sve tri vrijednosti spremaju se pod zajedničku komponentu **Oblaci** i ulaze u imenovane presete. Primjer: donja granica 90% vrijedi i za samostalne Oblake i za oblake u Kiši i oblacima, Snijegu i oblacima ili Grmljavini. Ne traži se poseban skriveni preset kombinacije. Čista kiša/snijeg/sunce/vjetar/noć bez oblaka te magla ne koriste taj sloj. Broj oblaka podešava **Gustoća na tabu Oblaci**, a dimenzije **Veličina na istom tabu**, ne gustoća ili veličina kapljica na Kiši.
 
 Za oblake preko gotovo cijelog zaslona probaj **gornja granica 10%, donja 90%, razmak 90–100%**. Ako želiš cijeli pojas pri dnu, npr. **60–90%**, najprije povećaj donju granicu. Gornja ne može biti veća od donje; jednakost daje jedan vodoravni pojas.
 
@@ -184,7 +203,7 @@ Na tabu **Grmljavina** podešavaš:
 | Razmak | 5–60 s · 12 s | Minimalni razmak događaja, ne brzina crtanja |
 | Svjetlina bljeska | 0,05–0,25 · 0,10 | Samo kratki bljesak pozadine, ne linija munje |
 
-Parametri animacije munje su opći za profil integracije i vrijede za obje grmljavinske varijante; pet klizača izgleda i dalje je zasebno po točno odabranom efektu. Ako se preklapa više uključenih profila, koristi se jedan zajednički događaj: sporije nastajanje i nestajanje, manje grana/sjaja/debljine/dosega i niža svjetlina. Vidljiva munja ili bljesak prikazuju se ako ih traži barem jedan izričito uključen profil. Promjene parametara ne pokreću aktivnu munju ispočetka i ne skraćuju već uspostavljeni razmak.
+Parametri animacije munje su opći za profil integracije i vrijede za obje grmljavinske varijante; izgled kiše, oblaka i vjetra uređuje se na njihovim zajedničkim tabovima, ne zasebnim presetom grmljavine. Ako se preklapa više uključenih profila, koristi se jedan zajednički događaj: sporije nastajanje i nestajanje, manje grana/sjaja/debljine/dosega i niža svjetlina. Vidljiva munja ili bljesak prikazuju se ako ih traži barem jedan izričito uključen profil. Promjene parametara ne pokreću aktivnu munju ispočetka i ne skraćuju već uspostavljeni razmak.
 
 Geometrija se stvara jednom po događaju, s najviše osam bočnih grana i unaprijed ograničenim spremnicima. Tijekom rasta prikazuje se samo dovršeni dio staze; duljina grana raste nakon dolaska glavne munje. Nema niza brzih ponovnih udara. Ukupni budžet čestica uključuje i grane i bljesak.
 
@@ -299,7 +318,7 @@ Iz korijena repozitorija možeš pokrenuti `python -m http.server 8000 --bind 12
 
 Demo kontrolne kartice je na `http://127.0.0.1:8000/demo/controls.html`; koristi izmišljeni profil i memorijske servise, ne stvarne HA postavke.
 
-Ako imaš Chrome, Edge ili Chromium, opcionalni `node scripts/browser_smoke.mjs` provjerava svih 18 efekata u stvarnom headless pregledniku, prozirnost za klikove, mobilnu rezoluciju, vrućinu i naoblaku, izričito uključivanje/razmak munja, smanjeno kretanje i promjenu dashboarda. Testira i stvarnu karticu u pregledniku: zasebne spremljene postavke kroz testne servise i upozoreno uključivanje munja. Za provjeru razmaka munja koristi determinističko pomicanje testnog sata; ne čeka svaki stvarni razmak. Koristi novi privremeni profil, nikad postojeći korisnički profil. Put do preglednika možeš zadati varijablom `WEATHER_EFFECTS_BROWSER`. Slike i izvještaj spremaju se u `dist/visual-preview`; to nije test Home Assistant instalacije.
+Ako imaš Chrome, Edge ili Chromium, opcionalni `node scripts/browser_smoke.mjs` provjerava svih 18 efekata u stvarnom headless pregledniku, prozirnost za klikove, mobilnu rezoluciju, vrućinu i naoblaku, izričito uključivanje/razmak munja, smanjeno kretanje i promjenu dashboarda. Testira i stvarnu karticu spojenu na stvarni renderer preko zajedničkog testnog HA transporta: svih 18 sastava slojeva, promjene kontrole komponente dok je aktivna kombinacija, nepromijenjene čestice drugih slojeva, nepostojanje dropdowna za cilj uređivanja, imenovane presete te upozoreno uključivanje munja. Za provjeru razmaka munja koristi determinističko pomicanje testnog sata; ne čeka svaki stvarni razmak. Koristi novi privremeni profil, nikad postojeći korisnički profil. Put do preglednika možeš zadati varijablom `WEATHER_EFFECTS_BROWSER`. Slike i izvještaj spremaju se u `dist/visual-preview`; to nije test Home Assistant instalacije.
 
 Python testovi vremenske logike koriste stvarne datetime vrijednosti, a testovi koordinatora koriste izričite HA simulacije. JS testovi koriste simulirani DOM/canvas/vezu. Ovo **nije** zamjena za test instalacije i prikaza na HA-u.
 

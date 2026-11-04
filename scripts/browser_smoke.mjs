@@ -271,7 +271,7 @@ try {
     await change('mode','automatic');
     const autoLocked=find('effect').disabled;
     await d.card.selectTab('rain');await change('speed',2.2);
-    const filtered=[...find('settings_effect').options].map(option=>option.value).join(',')==='rain,rain_clouds,downpour';
+    const noTargetDropdown=!find('settings_effect'),fixedRainTarget=d.settings.settings_effect==='rain';
     const independent=d.presets.rain.speed===2.2&&d.settings.effect==='snow'&&d.settings.mode==='automatic';
     await d.card.selectTab('snow');const snowUnchanged=Number(find('speed').value)===1;
     await d.card.selectTab('rain');const restored=Number(find('speed').value)===2.2;
@@ -290,11 +290,48 @@ try {
     const style=getComputedStyle(root.querySelector('[role="tab"][aria-selected="true"]'));
     const luminance=color=>color.match(/[0-9.]+/g).slice(0,3).map(Number).map(v=>v/255).map(v=>v<=0.04045?v/12.92:((v+0.055)/1.055)**2.4).reduce((sum,v,i)=>sum+v*[0.2126,0.7152,0.0722][i],0);
     const fg=luminance(style.color),bg=luminance(style.backgroundColor),readableTab=(Math.max(fg,bg)+0.05)/(Math.min(fg,bg)+0.05)>=4.5;
-    return {initiallyOff,defaultGeneral,tabCount,warned,autoLocked,filtered,independent,snowUnchanged,restored,animationSaved,switchesIndependent,explicit,generalNoWrite,keyboard,readableTab,
+    return {initiallyOff,defaultGeneral,tabCount,warned,autoLocked,noTargetDropdown,fixedRainTarget,independent,snowUnchanged,restored,animationSaved,switchesIndependent,explicit,generalNoWrite,keyboard,readableTab,
       service:d.calls.find(call=>call.domain==='number'&&call.data.value===2.2)?.service};
   })()`);
-  assert.deepEqual(cardChecks,{initiallyOff:true,defaultGeneral:true,tabCount:11,warned:true,autoLocked:true,filtered:true,independent:true,snowUnchanged:true,restored:true,animationSaved:true,switchesIndependent:true,explicit:true,generalNoWrite:true,keyboard:true,readableTab:true,service:'set_value'});
-  await evaluate(`(async()=>{const d=window.weatherEffectsControlDemo;await d.card.selectTab('clouds');await window.changeWeatherControl('cloud_bottom',90);await window.changeWeatherControl('cloud_top',60);await window.changeWeatherControl('cloud_spread',95);await d.card.selectTab('general');})()`);
+  assert.deepEqual(cardChecks,{initiallyOff:true,defaultGeneral:true,tabCount:11,warned:true,autoLocked:true,noTargetDropdown:true,fixedRainTarget:true,independent:true,snowUnchanged:true,restored:true,animationSaved:true,switchesIndependent:true,explicit:true,generalNoWrite:true,keyboard:true,readableTab:true,service:'set_value'});
+  const combinationChecks=await evaluate(`(async()=>{
+    const d=window.weatherEffectsControlDemo,o=d.overlay,keys=['speed','size','density','opacity','wind'];
+    const until=performance.now()+2000;while(!o.configs.length&&performance.now()<until)await new Promise(r=>setTimeout(r,10));
+    d.setWeatherEffect('rain_clouds');d.setPreview(true);
+    const styles=source=>Object.fromEntries(keys.map(key=>[key,o.scenes[0].layerViews[source].config[key]]));
+    const cloudArray=o.scenes[0].clouds,cloudBefore=styles('clouds');
+    await d.card.selectTab('rain');
+    for(const [key,value]of Object.entries({speed:2.6,size:1.3,density:140,opacity:0.4,wind:1}))await window.changeWeatherControl(key,value);
+    const rainControls=JSON.stringify(styles('rain'))===JSON.stringify({speed:2.6,size:1.3,density:140,opacity:0.4,wind:1});
+    const cloudsStable=o.scenes[0].clouds===cloudArray&&JSON.stringify(styles('clouds'))===JSON.stringify(cloudBefore);
+    const rainArray=o.scenes[0].rain,rainBefore=styles('rain');
+    await d.card.selectTab('clouds');
+    for(const [key,value]of Object.entries({speed:0.5,size:1.1,density:110,opacity:0.4,wind:-0.4,cloud_bottom:80,cloud_top:20,cloud_spread:95}))await window.changeWeatherControl(key,value);
+    const rainStable=o.scenes[0].rain===rainArray&&JSON.stringify(styles('rain'))===JSON.stringify(rainBefore);
+    const cloudControls=o.scenes[0].layerViews.clouds.config.cloud_bottom===80&&o.scenes[0].clouds.length===5;
+    const own={sun:'sun',clouds:'clouds',rain:'rain',snow:'snow',fog:'fog',wind:'wind',night:'stars',hail:'hail'},rows=[];
+    for(const effect of ${JSON.stringify(effects)}){
+      d.setWeatherEffect(effect);const sources=[...new Set(Object.values(d.profile.layer_sources))];
+      if(effect==='off'){if(o.active.length||!o.canvas.hidden)throw Error('Off effect still renders');rows.push({effect,sources});continue;}
+      if(JSON.stringify(Object.keys(o.scenes[0].layerViews).sort())!==JSON.stringify([...sources].sort()))throw Error('Wrong source composition: '+effect);
+      for(const source of sources){
+        await d.card.selectTab(source);const scene=o.scenes[0],others=Object.fromEntries(sources.filter(s=>s!==source).map(s=>[s,scene[own[s]]]));
+        const previous=scene.layerViews[source].config.speed,value=previous>=2.8?0.7:Number((previous+0.1).toFixed(1));
+        await window.changeWeatherControl('speed',value);
+        if(o.scenes[0].layerViews[source].config.speed!==value)throw Error('Inert slider '+effect+'/'+source);
+        for(const [other,array]of Object.entries(others))if(o.scenes[0][own[other]]!==array)throw Error('Unrelated particles reset '+effect+'/'+source+'/'+other);
+        if(d.profile.effect!==effect||d.settings.mode!=='automatic'||d.settings.effect!=='snow')throw Error('Tab changes actual weather');
+      }
+      if(d.card.shadowRoot.querySelector('[data-control="settings_effect"]'))throw Error('Unnecessary target dropdown returned');
+      rows.push({effect,sources});
+    }
+    d.setWeatherEffect('rain_clouds');await d.card.selectTab('rain');window.scrollTo(0,0);
+    return {rainControls,cloudsStable,rainStable,cloudControls,rows};
+  })()`);
+  assert.equal(combinationChecks.rainControls,true);assert.equal(combinationChecks.cloudsStable,true);
+  assert.equal(combinationChecks.rainStable,true);assert.equal(combinationChecks.cloudControls,true);assert.equal(combinationChecks.rows.length,18);
+  await writeFile(join(output,'combined-rain-cloud-controls.png'),Buffer.from((await command('Page.captureScreenshot',{format:'png'})).data,'base64'));
+  await evaluate(`(async()=>{const d=window.weatherEffectsControlDemo;await d.card.selectTab('clouds');await window.changeWeatherControl('cloud_bottom',90);await window.changeWeatherControl('cloud_top',60);await window.changeWeatherControl('cloud_spread',95);await d.card.selectTab('general');window.sceneBeforeNamedSave=d.overlay.scenes[0];})()`);
   // Exercise a real focus -> text entry -> mouse click, including blur ordering.
   await clickCard('[data-preset-name]');
   await command('Input.insertText',{text:'Oblaci nisko'});
@@ -302,7 +339,9 @@ try {
   const saveDeadline=Date.now()+2000;
   while(!(await evaluate('window.weatherEffectsControlDemo.wsCalls.length'))&&Date.now()<saveDeadline)await delay(25);
   assert.equal(await evaluate('window.weatherEffectsControlDemo.wsCalls.length'),1,'Real Save click was lost during input blur');
-  await evaluate('window.weatherEffectsPresetTestId=Object.keys(window.weatherEffectsControlDemo.savedPresets)[0]');
+  const saveSceneContinuity=await evaluate('window.weatherEffectsControlDemo.overlay.scenes[0]===window.sceneBeforeNamedSave');
+  assert.equal(saveSceneContinuity,true,'Saving a named preset must not reset active combined layers');
+  await evaluate('window.weatherEffectsControlDemo.setPreview(false);window.weatherEffectsControlDemo.setWeatherEffect("sun");window.weatherEffectsPresetTestId=Object.keys(window.weatherEffectsControlDemo.savedPresets)[0]');
   await clickCard('[data-preset-name]');
   await evaluate('window.weatherEffectsControlDemo.card.shadowRoot.querySelector("[data-preset-name]").select()');
   await command('Input.insertText',{text:'Oblaci do dna'});
@@ -357,8 +396,8 @@ try {
   await evaluate('window.weatherEffectsControlDemo.card.shadowRoot.querySelector(".preset-actions").scrollIntoView({block:"center"})');
   await writeFile(join(output,'named-presets-mobile.png'),Buffer.from((await command('Page.captureScreenshot',{format:'png'})).data,'base64'));
   assert.deepEqual(exceptions, [], 'Uncaught browser exceptions');
-  await writeFile(join(output, 'report.json'), JSON.stringify({ browser: executable, effects: results, reducedMotion: 'passed', mobile: 'passed', adaptiveVisuals, coverage, cloudLayout, lightning, leaderEarly, leaderLate, returnStroke, componentChecks, cooldown, routeSafety, cardChecks, loadChecks, factoryChecks, deletion, adminOnly, readableActions, dialogs, mobileTabs, mobileManagerFits, uncaughtExceptions: exceptions.length }, null, 2) + '\n');
-  console.log(`Real Chromium test passed: ${effects.length} effects, cloud vertical bands/spread, real mouse/keyboard named preset CRUD/confirmations, lightning safety, and accessible tabs (desktop/mobile). Screenshots: ${output}`);
+  await writeFile(join(output, 'report.json'), JSON.stringify({ browser: executable, effects: results, reducedMotion: 'passed', mobile: 'passed', adaptiveVisuals, coverage, cloudLayout, lightning, leaderEarly, leaderLate, returnStroke, componentChecks, cooldown, routeSafety, cardChecks, combinationChecks, saveSceneContinuity, loadChecks, factoryChecks, deletion, adminOnly, readableActions, dialogs, mobileTabs, mobileManagerFits, uncaughtExceptions: exceptions.length }, null, 2) + '\n');
+  console.log(`Real Chromium test passed: ${effects.length} effects, all 18 component compositions through the real card+renderer, unaffected particle continuity, named preset CRUD, cloud layout and lightning safety (desktop/mobile). Screenshots: ${output}`);
 } finally {
   // Close the isolated browser (including its renderer children) before fallback kill.
   if (socket?.readyState === WebSocket.OPEN) {

@@ -1,6 +1,7 @@
 """Check release structure and localization without importing Home Assistant."""
 import ast
 import json
+import re
 import runpy
 from pathlib import Path
 from zipfile import ZipFile
@@ -47,6 +48,22 @@ for platform, controls in {
     for key in controls:
         assert english["entity"][platform][key]["name"], f"Missing entity translation: {key}"
 assert json.loads((component / "strings.json").read_text(encoding="utf-8")) == english
+
+# Check the complete backend/frontend composition contract, not only effect IDs.
+layers = runpy.run_path(str(component / "layers.py"))
+renderer = (component / "frontend/weather-effects.js").read_text(encoding="utf-8")
+
+def js_literal(name):
+    match = re.search(r"export const " + re.escape(name) + r"\s*=\s*Object\.freeze\((\{.*?\})\);", renderer, re.S)
+    assert match, f"Missing renderer composition constant: {name}"
+    literal = re.sub(r"([,{\s])([a-z][a-z0-9_]*)\s*:", r'\1"\2":', match.group(1))
+    literal = re.sub(r",\s*([}\]])", r"\1", literal)
+    return json.loads(literal)
+
+assert set(layers["EFFECT_LAYERS"]) == set(effects), "Missing backend effect composition"
+assert js_literal("EFFECTS") == layers["EFFECT_LAYERS"], "Backend/frontend effect composition mismatch"
+assert js_literal("COMPONENT_SOURCES") == layers["LAYER_SOURCES"], "Backend/frontend component source mismatch"
+assert set(layers["LAYER_SOURCES"].values()) == set(layers["COMPONENT_EFFECTS"]), "Invalid canonical component source"
 archive = ROOT / "dist" / f"weather-effects-{manifest['version']}.zip"
 with ZipFile(archive) as bundle:
     assert bundle.testzip() is None
@@ -54,7 +71,7 @@ with ZipFile(archive) as bundle:
     for required in ("manifest.json", "__init__.py", "config_flow.py", "coordinator.py", "sensor.py",
                      "logic.py", "compat.py", "const.py", "strings.json", "translations/hr.json",
                      "translations/en.json", "frontend/weather-effects.js", "frontend/weather-effects-card.js",
-                     "entity.py", "switch.py", "select.py", "number.py", "presets.py", "intensity.py", "named_presets.py"):
+                     "entity.py", "switch.py", "select.py", "number.py", "presets.py", "intensity.py", "named_presets.py", "layers.py"):
         assert f"custom_components/weather_effects/{required}" in names, required
     assert "README.md" in names and "LICENSE" in names
     assert not any("__pycache__" in name or name.endswith(".pyc") for name in names)

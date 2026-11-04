@@ -100,7 +100,7 @@ def load_backend():
         Required=MockedMarker, Optional=MockedMarker, Schema=lambda fields: fields))
     loaded = {}
     with patch.dict(sys.modules, stubs):
-        for name in ("const", "logic", "presets", "named_presets", "intensity", "coordinator", "config_flow"):
+        for name in ("const", "layers", "logic", "presets", "named_presets", "intensity", "coordinator", "config_flow"):
             full_name = PACKAGE + "." + name
             spec = importlib.util.spec_from_file_location(full_name, BACKEND / (name + ".py"))
             value = importlib.util.module_from_spec(spec)

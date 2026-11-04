@@ -14,6 +14,17 @@ from .named_presets import validate_cloud_bounds
 from .presets import effect_preset
 
 
+def validate_stored_cloud_bounds(settings):
+    """Check raw legacy entries too: canonical resolution must not hide errors."""
+    stored = settings.get("effect_settings", {})
+    if isinstance(stored, dict):
+        for appearance in stored.values():
+            if isinstance(appearance, dict):
+                validate_cloud_bounds({**settings, **appearance})
+    for effect in EFFECTS:
+        validate_cloud_bounds(effect_preset(settings, effect))
+
+
 def schema(hass, current):
     """Discover registered Lovelace dashboards, including custom URL paths."""
     panels = hass.data.get(frontend.DATA_PANELS, {})
@@ -82,8 +93,7 @@ def validate(hass, data):
         try:
             validate_cloud_bounds(data)
             # Flat fallback changes must also keep partial effect overrides valid.
-            for effect in EFFECTS:
-                validate_cloud_bounds(effect_preset(data, effect))
+            validate_stored_cloud_bounds(data)
         except ValueError:
             errors["cloud_top"] = "invalid_cloud_bounds"
     if not data.get("dashboards"):
@@ -144,8 +154,7 @@ class WeatherEffectsOptionsFlow(config_entries.OptionsFlow):
                     if key in current:
                         saved[key] = deepcopy(current[key])
                 try:
-                    for effect in EFFECTS:
-                        validate_cloud_bounds(effect_preset(saved, effect))
+                    validate_stored_cloud_bounds(saved)
                 except ValueError:
                     errors["cloud_top"] = "invalid_cloud_bounds"
                 if not errors:

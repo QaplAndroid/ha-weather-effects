@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 // HA serves an ES module, without requiring a package.json in the integration.
 const source = await readFile(new URL('../custom_components/weather_effects/frontend/weather-effects.js', import.meta.url), 'utf8');
-const { normalizeDashboard, normalizeConfig, effectLayers, matchesDashboard, activeConfigs, WeatherEffectsOverlay, MAX_PARTICLES, EFFECTS, scenePrimitiveCount, allocateBudget, cloudSilhouette, layoutClouds, cloudOverlap, LightningScheduler, LightningGeometry, lightningStage, lightningEligible } =
+const { normalizeDashboard, normalizeConfig, effectLayers, matchesDashboard, activeConfigs, WeatherEffectsOverlay, MAX_PARTICLES, EFFECTS, COMPONENT_SOURCES, scenePrimitiveCount, allocateBudget, cloudSilhouette, layoutClouds, cloudOverlap, LightningScheduler, LightningGeometry, lightningStage, lightningEligible } =
   await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 const config = (extra = {}) => normalizeConfig({ id: 'test', enabled: true, dashboards: ['lovelace', 'dashboard-home'], effect: 'snow', ...extra });
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
@@ -826,5 +826,274 @@ test('all variants safely render a one-pixel viewport and pause without RAF whil
     assert.equal(env.raf.size, effect === 'off' ? 0 : 1, effect);
   }
   assert.equal(overlay.width, 1); assert.equal(overlay.height, 1);
+  overlay.stop();
+});
+
+
+const appearanceFields = ['speed', 'size', 'density', 'opacity', 'wind', 'cloud_top', 'cloud_bottom', 'cloud_spread'];
+const canonicalSources = ['sun', 'clouds', 'rain', 'snow', 'fog', 'wind', 'night', 'hail'];
+const arraySources = {clouds: 'clouds', rain: 'rain', ripples: 'rain', snow: 'snow', wind: 'wind', fog: 'fog',
+  hail: 'hail', sun: 'sun', heat: 'sun', heatGlow: 'sun', stars: 'night', moon: 'night'};
+const layered = (effect, settings = {}, extra = {}) => config({effect, appearance_model: 'components_v1', layer_settings: settings, ...extra});
+const buildSeeded = (overlay, c) => {
+  const previous = Math.random;
+  try { Math.random = seededCloudRandom(73); overlay.scenes = []; overlay.active = [c]; overlay.buildScenes(); return overlay.scenes[0]; }
+  finally { Math.random = previous; }
+};
+
+test('component normalization whitelists eight finite bounded fields, filters inactive sources, and falls back only to flat fields', () => {
+  const input = {speed: Infinity, size: 99, density: 12.6, opacity: -1, wind: -99,
+    cloud_top: 90, cloud_bottom: 20, cloud_spread: '50', enabled: false,
+    lightning_enabled: true, intensity: {cloud: 1}, max_fps: 1, effect: 'off', respect_reduced_motion: false};
+  const c = layered('rain_clouds', {clouds: input, rain: {speed: 2}, snow: {speed: 3}},
+    {speed: 0.8, density: 90, cloud_spread: 45});
+  assert.deepEqual(Object.keys(c.layer_settings), ['clouds', 'rain']);
+  assert.deepEqual(Object.keys(c.layer_settings.clouds), appearanceFields);
+  assert.deepEqual(c.layer_settings.clouds, {speed: 0.8, size: 3, density: 13, opacity: 0.05, wind: -2,
+    cloud_top: 20, cloud_bottom: 90, cloud_spread: 45});
+  assert.equal(c.layer_settings.rain.speed, 2); assert.equal(c.layer_settings.rain.size, 1);
+  assert.equal(c.layer_settings.rain.density, 90); assert.equal(c.lightning_enabled, false);
+  assert.equal(c.enabled, true); assert.equal(c.respect_reduced_motion, true);
+  input.size = 0.3; assert.equal(c.layer_settings.clouds.size, 3, 'snapshot not source reference');
+  const bounds = {speed: [0.2, 3], size: [0.3, 3], density: [10, 200], opacity: [0.05, 1],
+    wind: [-2, 2], cloud_top: [0, 100], cloud_bottom: [0, 100], cloud_spread: [0, 100]};
+  for (const [field, [low, high]] of Object.entries(bounds)) {
+    for (const value of [NaN, Infinity, -Infinity, null, '2', {}, []]) {
+      assert.equal(layered('rain', {rain: {[field]: value}}).layer_settings.rain[field], config()[field]);
+    }
+    // Equal top/bottom avoid the intentional ordering of the two bounds.
+    const extreme = value => layered('rain', {rain: {[field]: value, ...(field.startsWith('cloud_') && field !== 'cloud_spread' ? {cloud_top: value, cloud_bottom: value} : {})}}).layer_settings.rain[field];
+    assert.equal(extreme(-999), low); assert.equal(extreme(999), high);
+  }
+  for (const settings of [null, false, [], 123, 'bad', {rain: null}, {rain: []}]) {
+    assert.deepEqual(layered('rain', settings).layer_settings.rain,
+      Object.fromEntries(appearanceFields.map(key => [key, config()[key]])));
+  }
+  assert.equal(config().layer_settings, undefined, 'legacy raw flat payload remains legacy');
+  assert.deepEqual(layered('off', {rain: {density: 200}}).layer_settings, {});
+});
+
+test('all 18 effects retain physical IDs and canonical views, correct component counts and size snapshots', () => {
+  assert.deepEqual(COMPONENT_SOURCES, {sun: 'sun', clouds: 'clouds', rain: 'rain', snow: 'snow', fog: 'fog',
+    wind: 'wind', night: 'night', hail: 'hail', storm_clouds: 'clouds', downpour: 'rain'});
+  const env = mockEnvironment(), overlay = new WeatherEffectsOverlay(env.win, env.doc);
+  overlay.width = 1200; overlay.height = 800;
+  const settings = Object.fromEntries(canonicalSources.map((key, i) => [key, {density: 30 + i * 17, size: 0.4 + i * 0.2}]));
+  for (const effect of Object.keys(EFFECTS)) {
+    const scene = buildSeeded(overlay, layered(effect, settings, {intensity: {heat: 1}}));
+    const sources = [...new Set(effectLayers(effect).map(key => COMPONENT_SOURCES[key]))];
+    assert.deepEqual(scene.layers, EFFECTS[effect]); assert.deepEqual(Object.keys(scene.layerViews), sources);
+    assert.equal(scene.config.size, 1, 'profile config is not replaced by a component');
+    const expected = {clouds: sources.includes('clouds') ? Math.ceil(settings.clouds.density / 22) : 0,
+      rain: sources.includes('rain') ? Math.round(settings.rain.density * (effect === 'sleet' ? 0.56 : effect === 'downpour' ? 1.8 : 1)) : 0,
+      snow: sources.includes('snow') ? Math.round(settings.snow.density * (effect === 'sleet' ? 0.44 : 1)) : 0,
+      wind: sources.includes('wind') ? Math.ceil(settings.wind.density / 9) : 0,
+      fog: sources.includes('fog') ? Math.ceil(settings.fog.density / 16) : 0,
+      hail: sources.includes('hail') ? settings.hail.density : 0,
+      ripples: sources.includes('rain') ? Math.ceil(settings.rain.density / 18) : 0,
+      stars: sources.includes('night') ? Math.ceil(settings.night.density / 5) : 0,
+      sun: sources.includes('sun') ? 1 : 0, moon: sources.includes('night') ? 1 : 0,
+      heat: sources.includes('sun') ? 3 : 0, heatGlow: sources.includes('sun') ? 1 : 0};
+    for (const [key, source] of Object.entries(arraySources)) {
+      assert.equal(scene[key].length, expected[key], `${effect}/${key}`);
+      for (const particle of scene[key]) assert.ok(particle.scale >= settings[source].size * 0.65 && particle.scale <= settings[source].size * 1.3);
+      if (scene.layerViews[source]) assert.equal(scene.layerViews[source][key], scene[key], 'no duplicated arrays');
+    }
+    assert.doesNotThrow(() => JSON.stringify(scene), 'browser diagnostics have no cyclic view references');
+  }
+});
+
+test('all five appearance controls stay independent for every active component in all compound effects', () => {
+  const env = mockEnvironment(), overlay = new WeatherEffectsOverlay(env.win, env.doc);
+  overlay.width = 1200; overlay.height = 800;
+  const changes = {speed: 2.5, size: 2.5, density: 170, opacity: 0.15, wind: -1.5};
+  for (const effect of Object.keys(EFFECTS)) {
+    const base = buildSeeded(overlay, layered(effect));
+    for (const target of Object.keys(base.layerViews)) for (const [field, value] of Object.entries(changes)) {
+      const changed = buildSeeded(overlay, layered(effect, {[target]: {[field]: value}}));
+      assert.equal(changed.layerViews[target].config[field], value, `${effect}/${target}/${field}`);
+      for (const other of Object.keys(base.layerViews).filter(key => key !== target)) {
+        for (const key of appearanceFields) assert.equal(changed.layerViews[other].config[key], base.layerViews[other].config[key]);
+        if (target === 'rain' && other === 'clouds') assert.deepEqual(changed.clouds, base.clouds,
+          'Rain edits cannot change cloud attributes/layout with a fixed build seed');
+      }
+      for (const [key, source] of Object.entries(arraySources)) {
+        if (field !== 'density' || source !== target) assert.equal(changed[key].length, base[key].length);
+      }
+    }
+  }
+});
+
+test('every direct draw method selects its canonical config, including sky, heat and ripples', () => {
+  const env = mockEnvironment(), overlay = new WeatherEffectsOverlay(env.win, env.doc);
+  overlay.width = 1200; overlay.height = 800; overlay.ctx = env.context;
+  const cases = [['drawClouds', 'storm', 'clouds'], ['drawRain', 'downpour', 'rain'], ['drawSnow', 'sleet', 'snow'],
+    ['drawWind', 'storm', 'wind'], ['drawHail', 'hail', 'hail'], ['drawFog', 'fog', 'fog'],
+    ['drawSky', 'partlycloudy', 'sun'], ['drawSky', 'night_clouds', 'night'], ['drawHeat', 'sun', 'sun'], ['drawRipples', 'rain_clouds', 'rain']];
+  for (const [method, effect, source] of cases) {
+    const c = layered(effect, {[source]: {speed: 2, size: 1.8, opacity: 0.2, wind: -1}}, {intensity: {heat: 1}});
+    const record = useView => {
+      const scene = buildSeeded(overlay, c), view = scene.layerViews[source];
+      for (const key of Object.keys(arraySources)) for (const p of scene[key]) Object.assign(p, {x: 500, y: 100, life: 0.3});
+      // Deliberately conflicting global appearance must never drive a layered draw.
+      Object.assign(scene.config, {speed: 0.2, size: 0.3, opacity: 1, wind: 2});
+      const draws = []; overlay.image = (...args) => draws.push([...args, env.context.globalAlpha]);
+      env.context.linePoints.length = 0;
+      overlay[method](useView ? view : scene, 0.1);
+      return {draws, points: [...env.context.linePoints], alpha: env.context.globalAlpha, width: env.context.lineWidth,
+        particles: Object.fromEntries(Object.keys(arraySources).map(key => [key, scene[key]]))};
+    };
+    assert.deepEqual(record(false), record(true), `${method}/${source}: root scene uses canonical view`);
+    assert.doesNotMatch(overlay[method].toString(), /createElement|Object\.assign|\.map\(|\.slice\(|\.\.\./, 'no per-frame view allocation');
+  }
+});
+
+test('active component edits rebuild, inactive edits and library metadata preserve identity and phase', async () => {
+  const env = mockEnvironment(), conn = env.connection(); env.doc.root = {hass: {connection: conn}};
+  const overlay = new WeatherEffectsOverlay(env.win, env.doc).start(); await flush();
+  const payload = {effect: 'rain_clouds', appearance_model: 'components_v1', layer_settings: {rain: {speed: 2}, clouds: {speed: 0.5}}};
+  conn.callback([config(payload)]); env.tick(0); env.tick(100);
+  const scenes = overlay.scenes, phase = scenes[0].layerViews.clouds.time;
+  conn.callback([{...config(payload), layer_settings: {...payload.layer_settings, snow: {speed: 3}},
+    layer_presets: {rain: {speed: 3}}, layer_sources: {rain: 'snow'}, title: 'renamed', id: 'renamed'}]);
+  assert.equal(overlay.scenes, scenes); assert.equal(scenes[0].layerViews.clouds.time, phase);
+  // Flat values covered by active effective values are not a visual change.
+  conn.callback([config({...payload, speed: 3})]); assert.equal(overlay.scenes, scenes);
+  for (const source of ['rain', 'clouds']) for (const [key, value] of Object.entries({speed: 1.5, size: 2, density: 120, opacity: 0.1, wind: -2, cloud_top: 50, cloud_bottom: 90, cloud_spread: 10})) {
+    const before = overlay.scenes;
+    conn.callback([config({...payload, layer_settings: {...payload.layer_settings, [source]: {...payload.layer_settings[source], [key]: value}}})]);
+    assert.notEqual(overlay.scenes, before, `${source}/${key}`);
+    conn.callback([config(payload)]);
+  }
+  conn.callback([layered('off', {rain: {density: 200}})]); assert.equal(env.raf.size, 0);
+  overlay.stop();
+});
+
+test('component clocks, cloud trajectories and night phases are independent and particles advance only once', async () => {
+  const env = mockEnvironment(), conn = env.connection(); env.doc.root = {hass: {connection: conn}};
+  const overlay = new WeatherEffectsOverlay(env.win, env.doc).start(); await flush();
+  const sample = rainSpeed => {
+    const c = layered('storm', {rain: {speed: rainSpeed}, clouds: {speed: 0.5, wind: -0.5}, wind: {speed: 1.5}});
+    conn.callback([c]); const scene = buildSeeded(overlay, c);
+    overlay.lastFrame = null; env.tick(0); env.tick(100);
+    return scene;
+  };
+  const slow = sample(0.2), fast = sample(3);
+  assert.deepEqual(fast.clouds, slow.clouds); assert.deepEqual(fast.wind, slow.wind);
+  assert.equal(fast.layerViews.clouds.time, slow.layerViews.clouds.time);
+  assert.ok(Math.abs((fast.layerViews.rain.time - slow.layerViews.rain.time) - 0.28) < 1e-9);
+  assert.notDeepEqual(fast.rain, slow.rain);
+  const sleet = layered('sleet', {rain: {speed: 3}, snow: {speed: 0.2}});
+  conn.callback([sleet]); const scene = overlay.scenes[0];
+  Object.assign(scene.rain[0], {x: 500, y: 100, depth: 0.5});
+  Object.assign(scene.snow[0], {x: 500, y: 100, depth: 0.5});
+  overlay.lastFrame = null; env.tick(200); env.tick(300);
+  assert.ok(Math.abs(scene.rain[0].y - (100 + 565 * 3 * 0.1)) < 1e-9);
+  assert.ok(Math.abs(scene.snow[0].y - (100 + 39.5 * 0.2 * 0.1)) < 1e-9);
+  const n = layered('night_clouds', {night: {speed: 0.2}, clouds: {speed: 3}});
+  conn.callback([n]); const night = overlay.scenes[0], start = night.layerViews.night.time;
+  overlay.lastFrame = null; env.tick(400); env.tick(500);
+  assert.ok(Math.abs(night.layerViews.night.time - start - 0.02) < 1e-9);
+  assert.ok(Math.abs(night.layerViews.clouds.time - start - 0.3) < 1e-9);
+  overlay.stop();
+});
+
+test('layered maximum budgets, sprite reuse, effective rain values and hard lightning gates remain safe', async () => {
+  const env = mockEnvironment(), conn = env.connection(); env.doc.root = {hass: {connection: conn}};
+  const overlay = new WeatherEffectsOverlay(env.win, env.doc).start(); await flush();
+  const settings = Object.fromEntries(canonicalSources.map(source => [source, {density: 200, speed: 3, size: 3,
+    opacity: 1, wind: 2, lightning_enabled: true, respect_reduced_motion: false}]));
+  const profiles = Array.from({length: 32}, (_, id) => layered(id % 2 ? 'storm' : 'partlycloudy', settings,
+    {id, lightning_enabled: true, lightning_interval: 5, intensity: {heat: 1, cloud: 1, rain: 1}}));
+  conn.callback(profiles);
+  assert.ok(overlay.scenes.reduce((sum, scene) => sum + scenePrimitiveCount(scene), 10) <= MAX_PARTICLES);
+  const views = overlay.scenes.map(scene => scene.layerViews), canvases = env.canvases.length;
+  env.tick(0); env.tick(100); env.tick(200);
+  assert.equal(env.canvases.length, canvases);
+  overlay.scenes.forEach((scene, i) => assert.equal(scene.layerViews, views[i]));
+  assert.ok(overlay.sprites.size <= 13);
+  conn.callback([layered('rain', {rain: {density: 100, speed: 2}}, {intensity: {rain: 1}})]);
+  assert.equal(overlay.scenes[0].rain.length, 100, 'backend effective Rain density never multiplied again');
+  assert.equal(overlay.scenes[0].layerViews.rain.config.speed, 2);
+  conn.callback([layered('storm', settings)]); overlay.drawLightning(100000);
+  assert.equal(overlay.lightning.flash, null, 'layer cannot enable master lightning');
+  conn.callback(profiles); env.motion.matches = true; env.motion.dispatch('change');
+  assert.equal(env.raf.size, 0, 'layer cannot override profile reduced-motion policy');
+  overlay.drawLightning(200000); assert.equal(overlay.lightning.flash, null);
+  env.motion.matches = false; env.motion.dispatch('change');
+  env.doc.hidden = true; env.doc.dispatch('visibilitychange'); assert.equal(env.raf.size, 0);
+  overlay.stop();
+});
+
+
+test('live edits preserve every unaffected component array and clock across all five controls and all eight sources', async () => {
+  const env = mockEnvironment(), conn = env.connection(); env.doc.root = {hass: {connection: conn}};
+  const overlay = new WeatherEffectsOverlay(env.win, env.doc).start(); await flush();
+  const changes = {speed: 2, size: 2, density: 120, opacity: 0.2, wind: -1};
+  let time = 0;
+  for (const effect of Object.keys(EFFECTS).filter(key => key !== 'off')) {
+    for (const target of [...new Set(effectLayers(effect).map(key => COMPONENT_SOURCES[key]))]) {
+      for (const [field, value] of Object.entries(changes)) {
+        conn.callback([layered(effect), layered('fog', {}, {id: 'other-profile'})]);
+        env.tick(time += 100); env.tick(time += 100);
+        const before = overlay.scenes[0], other = overlay.scenes[1];
+        const positions = Object.fromEntries(Object.entries(arraySources).filter(([, source]) => source !== target)
+          .map(([key]) => [key, structuredClone(before[key])]));
+        const phases = Object.fromEntries(Object.entries(before.layerViews).map(([source, view]) => [source, view.time]));
+        conn.callback([layered(effect, {[target]: {[field]: value}}), layered('fog', {}, {id: 'other-profile'})]);
+        const after = overlay.scenes[0];
+        assert.notEqual(after, before, `${effect}/${target}/${field}: scene snapshot rebuilds`);
+        for (const [key, source] of Object.entries(arraySources)) if (source !== target && before.layerViews[source]) {
+          assert.equal(after[key], before[key], `${effect}/${target}/${field}: preserves ${key} array identity`);
+          assert.deepEqual(after[key], positions[key], 'unaffected positions never regenerated');
+          assert.equal(after.layerViews[source].time, phases[source], 'unaffected phase remains continuous');
+          assert.equal(after.layerViews[source][key], after[key], 'view shares retained array');
+        }
+        assert.equal(overlay.scenes[1].fog, other.fog, 'other profile is retained too');
+        assert.equal(overlay.scenes[1].layerViews.fog.time, other.layerViews.fog.time);
+      }
+    }
+  }
+  overlay.stop();
+});
+
+test('layered cloud and rain retain live trajectory across opposite sliders, but resize rebuilds geometry', async () => {
+  const env = mockEnvironment(), conn = env.connection(); env.doc.root = {hass: {connection: conn}};
+  const overlay = new WeatherEffectsOverlay(env.win, env.doc).start(); await flush();
+  let settings = {rain: {}, clouds: {}};
+  conn.callback([layered('rain_clouds', settings)]); env.tick(0); env.tick(100);
+  for (const target of ['rain', 'clouds']) for (const [field, value] of Object.entries({speed: 2, size: 2, density: 120, opacity: 0.2, wind: -1})) {
+    const unaffected = target === 'rain' ? 'clouds' : 'rain';
+    const old = overlay.scenes[0], array = old[unaffected], phase = old.layerViews[unaffected].time;
+    settings = {...settings, [target]: {...settings[target], [field]: value}};
+    conn.callback([layered('rain_clouds', settings)]);
+    assert.equal(overlay.scenes[0][unaffected], array);
+    assert.equal(overlay.scenes[0].layerViews[unaffected].time, phase);
+  }
+  const old = overlay.scenes[0];
+  env.win.innerWidth = 400; env.win.innerHeight = 300; env.win.dispatch('resize');
+  assert.notEqual(overlay.scenes[0].clouds, old.clouds);
+  assert.notEqual(overlay.scenes[0].rain, old.rain);
+  assert.equal(overlay.scenes[0].viewportWidth, 400); assert.equal(overlay.scenes[0].viewportHeight, 300);
+  assert.ok(overlay.scenes[0].clouds.every(p => p.y <= 90));
+  overlay.stop();
+});
+
+test('global budget count redistribution may replace unchanged components without ever exceeding the cap', async () => {
+  const env = mockEnvironment(), conn = env.connection(); env.doc.root = {hass: {connection: conn}};
+  const overlay = new WeatherEffectsOverlay(env.win, env.doc).start(); await flush();
+  const profiles = density => Array.from({length: 32}, (_, id) => layered('storm', {
+    rain: {density}, wind: {density: 200}, clouds: {density: 200}}, {id, lightning_enabled: true}));
+  conn.callback(profiles(10)); const before = overlay.scenes;
+  conn.callback(profiles(200)); const after = overlay.scenes;
+  assert.ok(after.reduce((sum, scene) => sum + scenePrimitiveCount(scene), 10) <= MAX_PARTICLES);
+  let redistributed = 0;
+  after.forEach((scene, i) => {
+    for (const key of ['clouds', 'wind']) {
+      if (scene[key].length === before[i][key].length) assert.equal(scene[key], before[i][key]);
+      else { assert.notEqual(scene[key], before[i][key]); redistributed++; }
+    }
+  });
+  assert.ok(redistributed > 0, 'test actually exercises the global-cap exception');
   overlay.stop();
 });

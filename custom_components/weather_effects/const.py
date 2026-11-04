@@ -1,6 +1,6 @@
 """Constants for Weather Effects."""
 DOMAIN = "weather_effects"
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 SIGNAL_UPDATED = f"{DOMAIN}_updated"
 FRONTEND_URL = f"/weather_effects_static/weather-effects.js?v={VERSION}"
 DEFAULT_WEATHER = "weather.forecast_work_work"

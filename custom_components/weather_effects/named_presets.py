@@ -10,7 +10,7 @@ import unicodedata
 from uuid import uuid4
 
 from .const import DEFAULTS, EFFECTS, LIGHTNING_CONTROLS, NUMBER_CONTROLS, SWITCH_CONTROLS
-from .presets import APPEARANCE_KEYS, editing_effect, effect_preset
+from .presets import APPEARANCE_KEYS, editing_effect
 
 MAX_PRESETS = 20
 VISUAL_KEYS = (*APPEARANCE_KEYS, "effect", "settings_effect", "adaptive_weather",
@@ -80,7 +80,10 @@ def validate_snapshot(snapshot):
         for key, value in appearance.items():
             _validate_value(key, value)
         result["effect_settings"][effect] = deepcopy(appearance)
-        validate_cloud_bounds(effect_preset(result, effect))
+        # Validate the ORIGINAL legacy appearance against flat defaults. Resolving
+        # through a canonical primary could hide invalid bounds in old combos.
+        validate_cloud_bounds({**result, **appearance})
+    result["settings_effect"] = editing_effect(result)
     return deepcopy(result)
 
 

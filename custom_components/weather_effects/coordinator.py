@@ -12,7 +12,9 @@ from homeassistant.util import dt as dt_util
 
 from .const import CONTROL_KEYS, DOMAIN, LIGHTNING_CONTROLS, NUMBER_CONTROLS, SELECT_CONTROLS, SWITCH_CONTROLS
 from .logic import select_weather, parse_time
-from .presets import APPEARANCE_KEYS, configured_settings, configured_control_value, editing_effect, effect_preset
+from .presets import (APPEARANCE_KEYS, configured_settings, configured_control_value,
+                      editing_effect, effect_preset, appearance_target, preset_source)
+from .layers import EFFECT_LAYERS, LAYER_SOURCES, primary_component
 from .intensity import adapt, weather_metrics, nearest_hourly
 from .named_presets import apply_preset_action, preset_summaries, validate_cloud_bounds
 
@@ -88,17 +90,27 @@ class WeatherEffectsCoordinator(DataUpdateCoordinator):
                 weather_entity = options.get("weather_entity")
                 if not isinstance(weather_entity, str) or not weather_entity.startswith("weather.") or not weather_entity[8:]:
                     raise HomeAssistantError("Automatic mode requires a configured weather entity")
+            if key == "settings_effect":
+                value = primary_component(value)
             if configured_control_value(options, key) == value and (
-                key != "effect" or editing_effect(options) == value
+                key != "effect" or editing_effect(options) == primary_component(value)
             ):
                 if key == "lightning_enabled" and value is False:
                     self._publish_lightning_off()
                 return
             if key in APPEARANCE_KEYS:
-                target = editing_effect(options)
+                target = appearance_target(options, key)
                 stored = options.get("effect_settings")
                 presets = dict(stored) if isinstance(stored, dict) else {}
+                # Hail is both canonical and a legacy Clouds fallback. Freeze the
+                # pre-edit Clouds appearance before a new Hail write can become
+                # (or alter) that fallback. No read-time migration is needed.
+                if target == "hail" and not isinstance(presets.get("clouds"), dict):
+                    presets["clouds"] = effect_preset(options, "clouds")
                 previous = presets.get(target)
+                source = preset_source(options, target)
+                if source is not None and source != target:
+                    previous = effect_preset(options, target)
                 presets[target] = {**(previous if isinstance(previous, dict) else {}), key: value}
                 options["effect_settings"] = presets
                 if key in ("cloud_top", "cloud_bottom"):
@@ -109,7 +121,7 @@ class WeatherEffectsCoordinator(DataUpdateCoordinator):
             else:
                 options[key] = value
                 if key == "effect":
-                    options["settings_effect"] = value
+                    options["settings_effect"] = primary_component(value)
             self.hass.config_entries.async_update_entry(self.entry, options=options)
             if key == "lightning_enabled" and value is False:
                 self._publish_lightning_off()
@@ -200,8 +212,16 @@ class WeatherEffectsCoordinator(DataUpdateCoordinator):
                 metrics = weather_metrics(selected, attrs, hourly=True)
             else:
                 metrics = weather_metrics(attrs, attrs, rain_row=nearest_hourly(self._forecast, now) if adaptive else None)
-        preset = effect_preset(cfg, effect)
-        effective, intensity = adapt(preset, effect, metrics, adaptive, cfg["heat_threshold"])
+        rendered_effect = effect if enabled else "off"
+        preset = effect_preset(cfg, rendered_effect)
+        # Global intensity retains actual-effect semantics (notably partlycloudy heat).
+        _, intensity = adapt(preset, effect, metrics, adaptive, cfg["heat_threshold"])
+        effective, _ = adapt(preset, primary_component(rendered_effect), metrics, adaptive, cfg["heat_threshold"])
+        layer_sources = {layer: LAYER_SOURCES[layer] for layer in EFFECT_LAYERS.get(rendered_effect, [])}
+        layer_presets = {component: effect_preset(cfg, component)
+                         for component in dict.fromkeys(layer_sources.values())}
+        layer_settings = {component: adapt(base, component, metrics, adaptive, cfg["heat_threshold"])[0]
+                          for component, base in layer_presets.items()}
         if gate_id and (gate is None or gate.state in {"unknown", "unavailable"}):
             status = "enable_entity_unavailable"
         latest = configured_settings(self.entry)
@@ -210,7 +230,11 @@ class WeatherEffectsCoordinator(DataUpdateCoordinator):
             "name": cfg.get("name", self.entry.title),
             "enabled": enabled,
             "dashboards": cfg["dashboards"],
-            "effect": effect if enabled else "off",
+            "effect": rendered_effect,
+            "appearance_model": "components_v1",
+            "layer_sources": layer_sources,
+            "layer_presets": layer_presets,
+            "layer_settings": layer_settings,
             **effective,
             "settings_effect": editing_effect(cfg), "preset": preset,
             "saved_presets": preset_summaries(latest),

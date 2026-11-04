@@ -250,7 +250,7 @@ class NamedPresetsTests(unittest.IsolatedAsyncioTestCase):
         self.entry.options = {**deepcopy(backend.const.DEFAULTS), "only_options": {"x": [1]}}
         await asyncio.gather(self.save("One"), self.save("Two"), self.coordinator.async_set_control("cloud_spread", 95))
         self.assertEqual(len(self.entry.options["saved_presets"]), 2)
-        self.assertEqual(self.entry.options["effect_settings"]["snow"]["cloud_spread"], 95)
+        self.assertEqual(self.entry.options["effect_settings"]["clouds"]["cloud_spread"], 95)
         self.assertEqual(self.entry.options["only_options"], {"x": [1]})
         self.assertNotIn("weather_entity", self.entry.options)
         self.assertNotIn("transport_future", self.entry.options)

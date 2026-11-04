@@ -9,6 +9,16 @@ export const EFFECTS = Object.freeze({
   downpour: ["clouds", "downpour"], storm: ["storm_clouds", "wind", "rain"],
   storm_clouds: ["storm_clouds", "wind"],
 });
+// Physical render layers map only to these canonical appearance sources.
+export const COMPONENT_SOURCES = Object.freeze({
+  sun: "sun", clouds: "clouds", rain: "rain", snow: "snow", fog: "fog",
+  wind: "wind", night: "night", hail: "hail", storm_clouds: "clouds", downpour: "rain",
+});
+const APPEARANCE_BOUNDS = Object.freeze({speed: [0.2, 3], size: [0.3, 3], density: [10, 200],
+  opacity: [0.05, 1], wind: [-2, 2], cloud_top: [0, 100], cloud_bottom: [0, 100], cloud_spread: [0, 100]});
+const ARRAY_SOURCES = {clouds: "clouds", fog: "fog", wind: "wind", rain: "rain", snow: "snow",
+  hail: "hail", ripples: "rain", stars: "night", sun: "sun", moon: "night", heat: "sun", heatGlow: "sun"};
+const componentConfig = (config, source) => config.layer_settings?.[source] || config;
 // One closed cumulus silhouette: rounded lobes, a broad base and no ellipse seams.
 export function cloudSilhouette(ctx, variant = 0) {
   ctx.beginPath(); ctx.moveTo(65, 130);
@@ -50,11 +60,10 @@ export function allocateBudget(counts, budget = MAX_PARTICLES) {
   return result;
 }
 const visualSignature = configs => JSON.stringify(configs.map(c =>
-  [c.effect, c.speed, c.size, c.density, c.opacity, c.wind, c.max_fps, c.intensity,
+  [c.effect, c.layer_settings ? c.layer_settings : [c.speed, c.size, c.density, c.opacity, c.wind, c.cloud_top, c.cloud_bottom, c.cloud_spread], c.max_fps, c.intensity,
     c.lightning_enabled, c.lightning_interval, c.lightning_brightness, c.lightning_bolt_enabled,
     c.lightning_flash_enabled, c.lightning_formation_time, c.lightning_duration, c.lightning_branches,
-    c.lightning_thickness, c.lightning_glow, c.lightning_length,
-    c.cloud_top, c.cloud_bottom, c.cloud_spread]));
+    c.lightning_thickness, c.lightning_glow, c.lightning_length]));
 const BLOCKED_ROUTES = new Set(["config", "settings", "developer-tools", "profile", "auth", "onboarding", "lovelace-editor", "editor", "history", "logbook", "energy", "map", "calendar", "todo", "media-browser"]);
 const clamp = (value, low, high, fallback) => {
   const n = typeof value === "number" ? value : Number.NaN;
@@ -77,7 +86,7 @@ export function normalizeConfig(raw) {
   // Controls describe centers, not sprite edges. Sort malformed incoming bounds;
   // valid writes are checked by the backend before reaching this defensive path.
   const top = clamp(raw.cloud_top, 0, 100, 10), bottom = clamp(raw.cloud_bottom, 0, 100, 30);
-  return {
+  const config = {
     cloud_top: Math.min(top, bottom), cloud_bottom: Math.max(top, bottom),
     cloud_spread: clamp(raw.cloud_spread, 0, 100, 80),
     id: String(raw.id ?? ""), enabled: raw.enabled === true,
@@ -105,6 +114,25 @@ export function normalizeConfig(raw) {
     lightning_interval: clamp(raw.lightning_interval, 5, 60, 12),
     lightning_brightness: clamp(raw.lightning_brightness, 0.05, 0.25, 0.10),
   };
+  if (raw.appearance_model === "components_v1" || Object.prototype.hasOwnProperty.call(raw, "layer_settings")) {
+    config.appearance_model = "components_v1";
+    config.layer_settings = {};
+    for (const physical of effectLayers(config.effect)) {
+      const source = COMPONENT_SOURCES[physical];
+      if (config.layer_settings[source]) continue;
+      const input = raw.layer_settings?.[source];
+      const layer = {};
+      for (const [key, [low, high]] of Object.entries(APPEARANCE_BOUNDS)) {
+        layer[key] = clamp(input?.[key], low, high, config[key]);
+      }
+      layer.density = Math.round(layer.density);
+      const top = layer.cloud_top;
+      layer.cloud_top = Math.min(top, layer.cloud_bottom);
+      layer.cloud_bottom = Math.max(top, layer.cloud_bottom);
+      config.layer_settings[source] = layer;
+    }
+  }
+  return config;
 }
 // Conservative sprite-box overlap, normalized by the smaller rendered area.
 // A common wrap period keeps spacing coherent as the whole cloud field drifts.
@@ -496,19 +524,20 @@ export class WeatherEffectsOverlay {
     let cloudSeed = 1 + Math.floor(Math.random() * 2147483646);
     const cloudRandom = () => { cloudSeed = cloudSeed * 16807 % 2147483647; return cloudSeed / 2147483647; };
     const plans = this.active.map(config => {
-      const layers = effectLayers(config.effect), d = config.density;
+      const layers = effectLayers(config.effect);
+      const density = source => componentConfig(config, source).density;
       const rain = layers.includes("rain") || layers.includes("downpour");
       const mixed = rain && layers.includes("snow");
       return {
         clouds: layers.some(layer => layer === "clouds" || layer === "storm_clouds")
-          ? Math.ceil(d / 22 * (config.intensity.cloud === null ? 1 : 0.35 + 1.65 * config.intensity.cloud)) : 0,
-        fog: layers.includes("fog") ? Math.ceil(d / 16) : 0,
-        wind: layers.includes("wind") ? Math.ceil(d / 9) : 0,
-        rain: rain ? Math.round(d * (mixed ? 0.56 : layers.includes("downpour") ? 1.8 : 1)) : 0,
-        snow: layers.includes("snow") ? Math.round(d * (mixed ? 0.44 : 1)) : 0,
-        hail: layers.includes("hail") ? d : 0,
-        ripples: rain ? Math.ceil(d / 18) : 0,
-        stars: layers.includes("night") ? Math.ceil(d / 5) : 0,
+          ? Math.ceil(density("clouds") / 22 * (config.intensity.cloud === null ? 1 : 0.35 + 1.65 * config.intensity.cloud)) : 0,
+        fog: layers.includes("fog") ? Math.ceil(density("fog") / 16) : 0,
+        wind: layers.includes("wind") ? Math.ceil(density("wind") / 9) : 0,
+        rain: rain ? Math.round(density("rain") * (mixed ? 0.56 : layers.includes("downpour") ? 1.8 : 1)) : 0,
+        snow: layers.includes("snow") ? Math.round(density("snow") * (mixed ? 0.44 : 1)) : 0,
+        hail: layers.includes("hail") ? density("hail") : 0,
+        ripples: rain ? Math.ceil(density("rain") / 18) : 0,
+        stars: layers.includes("night") ? Math.ceil(density("night") / 5) : 0,
         sun: layers.includes("sun") ? 1 : 0,
         moon: layers.includes("night") ? 1 : 0,
         heat: layers.includes("sun") && config.intensity.heat > 0 ? Math.ceil(3 * config.intensity.heat) : 0,
@@ -521,20 +550,38 @@ export class WeatherEffectsOverlay {
     const budgets = allocateBudget(plans.map(plan => Object.values(plan).reduce((a, b) => a + b, 0)), MAX_PARTICLES - boltBudget);
     this.scenes = this.active.map((config, i) => {
       const counts = allocateBudget(SCENE_ARRAYS.map(key => plans[i][key]), budgets[i]);
-      const scene = { config, layers: effectLayers(config.effect), time: Math.random() * 30 };
+      const previous = this.scenes[i];
+      const compatible = config.layer_settings && previous?.layerViews
+        && previous.config.id === config.id && previous.config.effect === config.effect
+        && previous.viewportWidth === this.width && previous.viewportHeight === this.height;
+      const reuse = {};
+      if (compatible) for (const source of Object.keys(config.layer_settings)) {
+        const before = previous.layerViews[source]?.config;
+        const after = componentConfig(config, source);
+        reuse[source] = Boolean(before)
+          && Object.keys(APPEARANCE_BOUNDS).every(key => before[key] === after[key])
+          && (source !== "clouds" || before.intensity.cloud === config.intensity.cloud)
+          && (source !== "sun" || before.intensity.heat === config.intensity.heat)
+          && SCENE_ARRAYS.every((key, index) => ARRAY_SOURCES[key] !== source || previous[key].length === counts[index]);
+      }
+      const scene = { config, layers: effectLayers(config.effect), time: Math.random() * 30,
+        viewportWidth: this.width, viewportHeight: this.height };
       SCENE_ARRAYS.forEach((key, index) => {
+        // A global-budget redistribution may change another component's counts;
+        // only then must its arrays/clock restart despite unchanged appearance.
+        if (reuse[ARRAY_SOURCES[key]]) { scene[key] = previous[key]; return; }
         scene[key] = Array.from({ length: counts[index] }, (_, n) => ({
           x: Math.random() * this.width, y: Math.random() * this.height,
           depth: 0.25 + Math.random() * 0.75, phase: Math.random() * Math.PI * 2,
           spin: (Math.random() - 0.5) * 0.6, variant: n % 3,
-          scale: (0.65 + Math.random() * 0.65) * config.size,
+          scale: (0.65 + Math.random() * 0.65) * componentConfig(config, ARRAY_SOURCES[key]).size,
           life: Math.random(),
         }));
       });
-      scene.clouds = layoutClouds(scene.clouds, this.width, this.height, config, cloudRandom);
+      if (!reuse.clouds) scene.clouds = layoutClouds(scene.clouds, this.width, this.height, componentConfig(config, "clouds"), cloudRandom);
       scene.cloudPadding = Math.max(0, ...scene.clouds.map(p => 160 * p.scale));
-      for (const bank of scene.fog) bank.y = this.height * (0.72 + Math.random() * 0.27);
-      for (const star of scene.stars) star.y *= 0.48;
+      if (!reuse.fog) for (const bank of scene.fog) bank.y = this.height * (0.72 + Math.random() * 0.27);
+      if (!reuse.night) for (const star of scene.stars) star.y *= 0.48;
       // Warm only used sprites. The finite key set caps cache size at 13;
       // all sprites are <=320x160 CSS px (DPR capped at 2), never viewport-sized.
       scene.cloudSprite = scene.layers.includes("storm_clouds") || (config.intensity.cloud !== null && config.intensity.cloud >= 0.65) ? "darkCloud" : "cloud";
@@ -544,6 +591,16 @@ export class WeatherEffectsOverlay {
           : key === "snow" ? ["snow0", "snow1", "snow2"]
           : [({ stars: "star", clouds: "cloud" })[key] || key];
         for (const name of names) this.sprite(name);
+      }
+      if (config.layer_settings) {
+        const views = {};
+        for (const source of Object.keys(config.layer_settings)) {
+          // Snapshot once at build time. All views retain the scene's actual arrays
+          // and physical layer IDs; global intensity/gates cannot come from a layer.
+          views[source] = {...scene, config: {...config, ...config.layer_settings[source]},
+            time: reuse[source] ? previous.layerViews[source].time : scene.time};
+        }
+        scene.layerViews = views;
       }
       return scene;
     });
@@ -661,6 +718,10 @@ export class WeatherEffectsOverlay {
     this.ctx.clearRect(0, 0, this.width, this.height);
     for (const scene of this.scenes) {
       scene.time += dt * scene.config.speed;
+      if (scene.layerViews) for (const source in scene.layerViews) {
+        const view = scene.layerViews[source];
+        view.time += dt * view.config.speed;
+      }
       this.drawSky(scene);
       this.drawHeat(scene);
       this.drawClouds(scene, dt);
@@ -683,7 +744,8 @@ export class WeatherEffectsOverlay {
     if (p.x < -margin) p.x = this.width + margin;
     if (p.y > this.height + margin) { p.y = -margin; p.x = Math.random() * this.width; }
   }
-  drawSky({ config: c, time, sun, moon, stars }) {
+  drawSky(scene) {
+    const { config: c, time, sun, moon, stars } = scene.layerViews?.sun || scene.layerViews?.night || scene;
     const ctx = this.ctx, x = this.width * 0.82 + Math.sin(time * 0.035) * c.wind * 8;
     const y = Math.min(140, this.height * 0.17);
     for (const p of stars) {
@@ -697,7 +759,8 @@ export class WeatherEffectsOverlay {
     }
     if (moon.length) { ctx.globalAlpha = c.opacity * 0.8; this.image("moon", x, y, 120 * c.size); }
   }
-  drawHeat({ config: c, heat, heatGlow, time }) {
+  drawHeat(scene) {
+    const { config: c, heat, heatGlow, time } = scene.layerViews?.sun || scene;
     const intensity = c.intensity.heat, ctx = this.ctx;
     if (heatGlow.length) {
       ctx.globalAlpha = c.opacity * intensity * 0.7;
@@ -715,7 +778,8 @@ export class WeatherEffectsOverlay {
       ctx.stroke();
     }
   }
-  drawClouds({ config: c, clouds, cloudSprite, cloudPadding, time }, dt) {
+  drawClouds(scene, dt) {
+    const { config: c, clouds, cloudSprite, cloudPadding, time } = scene.layerViews?.clouds || scene;
     const spread = c.cloud_spread / 100, period = this.width + 2 * cloudPadding;
     const top = this.height * c.cloud_top / 100, bottom = this.height * c.cloud_bottom / 100;
     for (const p of clouds) {
@@ -730,7 +794,8 @@ export class WeatherEffectsOverlay {
       this.image(cloudSprite + p.variant % 2, p.x, y, 320 * p.scale, 160 * p.scale);
     }
   }
-  drawFog({ config: c, fog, time }, dt) {
+  drawFog(scene, dt) {
+    const { config: c, fog, time } = scene.layerViews?.fog || scene;
     for (const p of fog) {
       p.x += (7 + c.wind * 12) * c.speed * dt;
       this.wrap(p, 300 * p.scale);
@@ -739,7 +804,8 @@ export class WeatherEffectsOverlay {
       this.image("fog", p.x, p.y + Math.sin(time * 0.17 + p.phase) * 9, 600 * p.scale, 150 * p.scale);
     }
   }
-  drawWind({ config: c, wind, time }, dt) {
+  drawWind(scene, dt) {
+    const { config: c, wind, time } = scene.layerViews?.wind || scene;
     const ctx = this.ctx;
     for (const p of wind) {
       const direction = c.wind < 0 ? -1 : 1;
@@ -753,7 +819,8 @@ export class WeatherEffectsOverlay {
       ctx.stroke();
     }
   }
-  drawRain({ config: c, rain, layers }, dt) {
+  drawRain(scene, dt) {
+    const { config: c, rain, layers } = scene.layerViews?.rain || scene;
     const ctx = this.ctx, heavy = layers.includes("downpour"), storm = layers.includes("storm_clouds");
     const fallScale = heavy ? 1.45 : 1;
     for (const p of rain) {
@@ -767,7 +834,8 @@ export class WeatherEffectsOverlay {
       ctx.lineTo(p.x - drift / fall * length, p.y - length); ctx.stroke();
     }
   }
-  drawSnow({ config: c, snow, time }, dt) {
+  drawSnow(scene, dt) {
+    const { config: c, snow, time } = scene.layerViews?.snow || scene;
     const ctx = this.ctx;
     for (const p of snow) {
       p.y += (18 + 43 * p.depth) * c.speed * dt;
@@ -779,7 +847,8 @@ export class WeatherEffectsOverlay {
       this.image(`snow${p.depth < 0.45 ? 2 : p.variant % 2}`, 0, 0, radius * 2); ctx.restore();
     }
   }
-  drawHail({ config: c, hail }, dt) {
+  drawHail(scene, dt) {
+    const { config: c, hail } = scene.layerViews?.hail || scene;
     for (const p of hail) {
       p.y += (260 + p.depth * 310) * c.speed * dt;
       p.x += (c.wind * 85 + 12) * c.speed * dt; this.wrap(p, 16);
@@ -787,7 +856,8 @@ export class WeatherEffectsOverlay {
       this.image("hail", p.x, p.y, (7 + 8 * p.depth) * c.size);
     }
   }
-  drawRipples({ config: c, ripples }, dt) {
+  drawRipples(scene, dt) {
+    const { config: c, ripples } = scene.layerViews?.rain || scene;
     const ctx = this.ctx;
     for (const p of ripples) {
       p.life += dt * c.speed * 0.7;

@@ -23,7 +23,7 @@
           "cloud_spread": "Cloud spread (%)",
           "respect_reduced_motion": "Respect device reduced-motion preference",
           "max_fps": "Maximum frames per second",
-          "settings_effect": "Edit settings for effect",
+          "settings_effect": "Component editing target (compatibility)",
           "adaptive_weather": "Adapt intensity to weather data",
           "heat_threshold": "Heat threshold (°C)",
           "lightning_enabled": "Enable lightning effects (photosensitivity warning)",
@@ -44,7 +44,7 @@
           "enable_entity": "Optional: select input_boolean.christmasmode or another switch. Effects run only while it is on. Clear this field to stop using it.",
           "forecast_offset": "0 = current conditions; +1 to +72 = nearest hourly forecast. Outside forecast coverage or on errors, fall back to current conditions (see diagnostic sensor).",
           "effect": "Used in manual mode only. Automatic mode chooses effects from the weather entity.",
-          "cloud_top": "Default cloud-center upper limit (0 = top of screen). Per-effect overrides are on the card. Must not exceed the lower limit; sprites may extend beyond the center band.",
+          "cloud_top": "Default cloud-center upper limit (0 = top of screen). Shared Clouds overrides are on the Clouds tab. Must not exceed the lower limit; sprites may extend beyond the center band.",
           "cloud_bottom": "Default cloud-center lower limit (100 = bottom of screen). Raise this first to allow clouds lower down. Must be at least the upper limit.",
           "cloud_spread": "Default spacing: 0 = random placement, 100 = stronger distribution and coherent drift. Very large/dense clouds can still overlap. Fog is separate.",
           "respect_reduced_motion": "Pause effects if your device requests reduced motion. Lightning is ALWAYS disabled by reduced motion, even if this switch is off.",
@@ -61,11 +61,11 @@
           "lightning_thickness": "Width of the bright bolt core in CSS pixels, 0.5–4.",
           "lightning_glow": "Soft outer glow, 0–1; it does not change screen-flash brightness.",
           "lightning_length": "Main bolt reach as a fraction of screen height: 0.2–0.9, default 0.6.",
-          "speed": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card.",
-          "size": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card.",
-          "density": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card.",
-          "opacity": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card.",
-          "wind": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card."
+          "speed": "Legacy/default fallback for components without saved settings. Each card tab edits its shared component in every weather combination.",
+          "size": "Legacy/default fallback for components without saved settings. Each card tab edits its shared component in every weather combination.",
+          "density": "Legacy/default fallback for components without saved settings. Each card tab edits its shared component in every weather combination.",
+          "opacity": "Legacy/default fallback for components without saved settings. Each card tab edits its shared component in every weather combination.",
+          "wind": "Legacy/default fallback for components without saved settings. Each card tab edits its shared component in every weather combination."
         },
         "description": "Choose where and how weather effects appear. All options can be changed later."
       }
@@ -104,7 +104,7 @@
           "cloud_spread": "Cloud spread (%)",
           "respect_reduced_motion": "Respect device reduced-motion preference",
           "max_fps": "Maximum frames per second",
-          "settings_effect": "Edit settings for effect",
+          "settings_effect": "Component editing target (compatibility)",
           "adaptive_weather": "Adapt intensity to weather data",
           "heat_threshold": "Heat threshold (°C)",
           "lightning_enabled": "Enable lightning effects (photosensitivity warning)",
@@ -125,7 +125,7 @@
           "enable_entity": "Optional: select input_boolean.christmasmode or another switch. Effects run only while it is on. Clear this field to stop using it.",
           "forecast_offset": "0 = current conditions; +1 to +72 = nearest hourly forecast. Outside forecast coverage or on errors, fall back to current conditions (see diagnostic sensor).",
           "effect": "Used in manual mode only. Automatic mode chooses effects from the weather entity.",
-          "cloud_top": "Default cloud-center upper limit (0 = top of screen). Per-effect overrides are on the card. Must not exceed the lower limit; sprites may extend beyond the center band.",
+          "cloud_top": "Default cloud-center upper limit (0 = top of screen). Shared Clouds overrides are on the Clouds tab. Must not exceed the lower limit; sprites may extend beyond the center band.",
           "cloud_bottom": "Default cloud-center lower limit (100 = bottom of screen). Raise this first to allow clouds lower down. Must be at least the upper limit.",
           "cloud_spread": "Default spacing: 0 = random placement, 100 = stronger distribution and coherent drift. Very large/dense clouds can still overlap. Fog is separate.",
           "respect_reduced_motion": "Pause effects if your device requests reduced motion. Lightning is ALWAYS disabled by reduced motion, even if this switch is off.",
@@ -142,11 +142,11 @@
           "lightning_thickness": "Width of the bright bolt core in CSS pixels, 0.5–4.",
           "lightning_glow": "Soft outer glow, 0–1; it does not change screen-flash brightness.",
           "lightning_length": "Main bolt reach as a fraction of screen height: 0.2–0.9, default 0.6.",
-          "speed": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card.",
-          "size": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card.",
-          "density": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card.",
-          "opacity": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card.",
-          "wind": "Legacy/default fallback for effects without a saved override. Edit individual effect presets on the dashboard card."
+          "speed": "Legacy/default fallback for components without saved settings. Each card tab edits its shared component in every weather combination.",
+          "size": "Legacy/default fallback for components without saved settings. Each card tab edits its shared component in every weather combination.",
+          "density": "Legacy/default fallback for components without saved settings. Each card tab edits its shared component in every weather combination.",
+          "opacity": "Legacy/default fallback for components without saved settings. Each card tab edits its shared component in every weather combination.",
+          "wind": "Legacy/default fallback for components without saved settings. Each card tab edits its shared component in every weather combination."
         },
         "description": "Choose where and how weather effects appear. All options can be changed later."
       }
@@ -267,7 +267,7 @@
         }
       },
       "settings_effect": {
-        "name": "Edit settings for effect",
+        "name": "Component editing target (compatibility)",
         "state": {
           "off": "Off",
           "snow": "Snow",

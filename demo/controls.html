@@ -1,10 +1,18 @@
 <!doctype html>
 <html lang="hr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Weather Effects — kontrolna kartica demo</title><style>
 :root{font:16px system-ui;color-scheme:dark;--primary-text-color:#e4edf6;--secondary-text-color:#9eb3c8;--primary-color:#77c9ff;--card-background-color:#182b40;--divider-color:#35495d;--error-color:#ffb7a8}body{margin:0;background:#0d1b2a;color:var(--primary-text-color)}header{max-width:900px;margin:auto;padding:26px 24px 8px}h1{font-size:24px;margin:0 0 8px}p{color:#9eb3c8;line-height:1.6}.layout{max-width:900px;margin:auto;padding:16px 24px 40px}#error{color:#ffb7a8}a{color:#77c9ff}</style></head>
-<body><header><h1>Weather Effects — kontrolna kartica</h1><p>Lokalni testni prikaz s izmišljenim profilom i memorijskim HA servisima. Nije spojen na Home Assistant i ne mijenja postavke doma. <a href="./">Grafički demo</a></p><div id="error"></div></header><main class="layout"><weather-effects-control-card></weather-effects-control-card></main>
+<body><header><h1>Weather Effects — kontrolna kartica</h1><p>Lokalni testni prikaz s izmišljenim profilom i memorijskim HA servisima. Nije spojen na Home Assistant i ne mijenja postavke doma. <a href="./">Grafički demo</a></p><div id="error"></div></header><home-assistant><main class="layout"><weather-effects-control-card></weather-effects-control-card></main></home-assistant>
 <script type="module">
 try {
   await import('../custom_components/weather_effects/frontend/weather-effects-card.js');
+  const {WeatherEffectsOverlay,EFFECTS,COMPONENT_SOURCES}=await import('../custom_components/weather_effects/frontend/weather-effects.js');
+  window.__weatherEffectsOverlay?.stop();
+  const route={pathname:'/unselected/controls',search:''};
+  const localWindow=new Proxy(window,{get(target,key){if(key==='location')return route;const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;}});
+  const primary={partlycloudy:'sun',rain_clouds:'rain',snow_clouds:'snow',wind_clouds:'wind',night_clouds:'night',downpour:'rain',storm:'rain',storm_clouds:'clouds',sleet:'snow'};
+  const canonical=new Set(Object.values(COMPONENT_SOURCES));
+  const component=effect=>canonical.has(effect)?effect:primary[effect]||'snow';
+  let weatherEffect='sun',lastProfile,overlay;
   const effects=['off','snow','rain','sun','clouds','partlycloudy','rain_clouds','snow_clouds','fog','wind','wind_clouds','night','night_clouds','hail','sleet','downpour','storm','storm_clouds'];
   const defaults={speed:1,size:1,density:60,opacity:0.65,wind:0.2,cloud_top:10,cloud_bottom:30,cloud_spread:80};
   const settings={enabled:true,respect_reduced_motion:true,adaptive_weather:true,lightning_enabled:false,mode:'manual',effect:'snow',settings_effect:'snow',forecast_offset:0,max_fps:30,heat_threshold:30,lightning_interval:12,lightning_brightness:0.1,lightning_bolt_enabled:true,lightning_flash_enabled:true,lightning_formation_time:0.8,lightning_duration:0.7,lightning_branches:4,lightning_thickness:1.5,lightning_glow:0.6,lightning_length:0.6};
@@ -42,20 +50,25 @@ try {
   function refresh(){
     const states={};
     for(const [key,id] of Object.entries(controls)){
-      const presetKey=Object.hasOwn(defaults,key),value=presetKey?(presets[settings.settings_effect]?.[key]??defaults[key]):settings[key];
+      const target=key.startsWith('cloud_')?'clouds':component(settings.settings_effect);
+      const presetKey=Object.hasOwn(defaults,key),value=presetKey?(presets[target]?.[key]??defaults[key]):key==='settings_effect'?component(settings.settings_effect):settings[key];
       const attrs={};
       if(selects.includes(key))attrs.options=key==='mode'?['manual','automatic']:effects;
       if(ranges[key])[attrs.min,attrs.max,attrs.step]=ranges[key];
       states[id]={entity_id:id,state:switches.includes(key)?(value?'on':'off'):String(value??'off'),attributes:attrs};
     }
-    const runtimeEffect=settings.mode==='automatic'?'sun':settings.effect;
+    const runtimeEffect=settings.mode==='automatic'?weatherEffect:settings.effect,activeEffect=settings.enabled?runtimeEffect:'off';
+    const layer_sources=Object.fromEntries((EFFECTS[activeEffect]||[]).map(layer=>[layer,COMPONENT_SOURCES[layer]]));
+    const layer_presets=Object.fromEntries([...new Set(Object.values(layer_sources))].map(source=>[source,{...defaults,...presets[source]}]));
+    const base={...defaults,...presets[component(runtimeEffect)]};
     const profile={id:'demo-profile',name:'Demo profil',enabled:settings.enabled,effective_enabled:settings.enabled,configured_enabled:settings.enabled,gate_entity:null,gate_enabled:null,controls,
-      saved_presets:summaries(),effect:settings.enabled?runtimeEffect:'off',mode:settings.mode,settings_effect:settings.settings_effect,...defaults,...presets[runtimeEffect],preset:{...defaults,...presets[runtimeEffect]},
-      source:settings.mode==='automatic'?'current':'manual',status:'ok',condition:settings.mode==='automatic'?'sunny':null,weather_entity:'weather.demo',dashboards:['lovelace'],
+      appearance_model:'components_v1',layer_sources,layer_presets,layer_settings:structuredClone(layer_presets),
+      saved_presets:summaries(),effect:activeEffect,mode:settings.mode,settings_effect:component(settings.settings_effect),...base,preset:base,
+      source:settings.mode==='automatic'?'current':'manual',status:'ok',condition:settings.mode==='automatic'?weatherEffect:null,weather_entity:'weather.demo',dashboards:['lovelace'],
       adaptive_weather:settings.adaptive_weather,...Object.fromEntries(Object.entries(settings).filter(([key])=>key.startsWith('lightning_'))),
-      intensity:{heat:settings.mode==='automatic'&&settings.adaptive_weather?0.5:0,cloud:null,rain:null,wind:null},
+      intensity:{heat:settings.mode==='automatic'&&settings.adaptive_weather&&['sun','partlycloudy'].includes(runtimeEffect)?0.5:0,cloud:null,rain:null,wind:null},
       weather_metrics:{temperature_c:36,cloud_coverage:70,precipitation_mm_h:3,wind_kmh:35,precipitation_source:'hourly_forecast'}};
-    hass={...hass,states};card.hass=hass;
+    hass={...hass,states};card.hass=hass;document.querySelector('home-assistant').hass=hass;lastProfile=profile;
     for(const cb of callbacks)cb([profile]);
   }
   const connection={connected:true,subscribeMessage(cb){callbacks.add(cb);queueMicrotask(refresh);return Promise.resolve(()=>callbacks.delete(cb));}};
@@ -64,15 +77,18 @@ try {
     const key=Object.keys(controls).find(key=>controls[key]===data.entity_id);
     if(!key)throw new Error('Unknown demo control');
     if(domain==='switch')settings[key]=service==='turn_on';
-    else if(domain==='select'){settings[key]=data.option;if(key==='effect')settings.settings_effect=data.option;}
+    else if(domain==='select'){settings[key]=key==='settings_effect'?component(data.option):data.option;if(key==='effect')settings.settings_effect=component(data.option);}
     else if(domain==='number'){
-      if(Object.hasOwn(defaults,key))presets[settings.settings_effect]={...presets[settings.settings_effect],[key]:data.value};
+      if(Object.hasOwn(defaults,key)){const target=key.startsWith('cloud_')?'clouds':component(settings.settings_effect);presets[target]={...presets[target],[key]:data.value};}
       else settings[key]=data.value;
     }else throw new Error('Unknown demo service');
     refresh();
   }};
   card.setConfig({type:'custom:weather-effects-control-card',profile:'demo-profile'});
   refresh();
-  window.weatherEffectsControlDemo={card,get hass(){return hass;},settings,presets,savedPresets,calls,wsCalls,controls,refresh};
+  overlay=new WeatherEffectsOverlay(localWindow,document).start();
+  window.weatherEffectsControlDemo={card,overlay,route,get hass(){return hass;},get profile(){return lastProfile;},settings,presets,savedPresets,calls,wsCalls,controls,refresh,
+    setWeatherEffect(effect){if(!(effect in EFFECTS))throw Error('Unknown effect');weatherEffect=effect;refresh();},
+    setPreview(enabled){route.pathname=enabled?'/lovelace/controls':'/unselected/controls';overlay.refresh();}};
 }catch(error){document.querySelector('#error').textContent=error.message;window.weatherEffectsControlDemoError=String(error);}
 </script></body></html>

@@ -168,7 +168,9 @@ class PersistenceRuntimeTests(unittest.IsolatedAsyncioTestCase):
         await self.coordinator.async_set_control("speed", 2.5)
         self.assertEqual(self.entry.options["effect"], "snow")
         self.assertEqual(self.entry.options["speed"], 1.2)
-        self.assertEqual(self.entry.options["effect_settings"]["rain"], {"speed": 2.5})
+        self.assertEqual(self.entry.options["effect_settings"]["rain"],
+                         {**p.effect_preset(self.entry.data, "rain"), "speed": 2.5})
+        self.assertEqual(self.entry.options["effect_settings"]["rain_clouds"], {"speed": 2})
         self.assertEqual(self.entry.data["effect_settings"]["snow"], {"size": 1.5})
         restarted = backend.coordinator.WeatherEffectsCoordinator(self.hass, self.entry)
         runtime = await restarted._async_update_data()
@@ -235,8 +237,8 @@ class PersistenceRuntimeTests(unittest.IsolatedAsyncioTestCase):
         async def edit(effect, key, value):
             await self.coordinator.async_set_control("settings_effect", effect)
             await self.coordinator.async_set_control(key, value)
-        await asyncio.gather(edit("rain", "speed", 2), edit("sun", "opacity", .8), self.coordinator.async_set_control("max_fps", 45))
-        self.assertEqual(self.entry.options["effect_settings"]["rain"]["speed"], 2)
+        await asyncio.gather(edit("rain", "speed", 2.1), edit("sun", "opacity", .8), self.coordinator.async_set_control("max_fps", 45))
+        self.assertEqual(self.entry.options["effect_settings"]["rain"]["speed"], 2.1)
         self.assertEqual(self.entry.options["effect_settings"]["sun"]["opacity"], .8)
         self.assertEqual(self.entry.options["max_fps"], 45)
         before = deepcopy(self.entry.options)
@@ -249,10 +251,11 @@ class PersistenceRuntimeTests(unittest.IsolatedAsyncioTestCase):
         before = deepcopy(self.entry.data)
         for effect, top, bottom, spread in (("clouds", 15, 25, 50), ("storm_clouds", 30, 30, 100)):
             await self.coordinator.async_set_control("settings_effect", effect)
+            await self.coordinator.async_set_control("cloud_bottom", max(bottom, top))
             await self.coordinator.async_set_control("cloud_top", top)
-            await self.coordinator.async_set_control("cloud_bottom", bottom)
             await self.coordinator.async_set_control("cloud_spread", spread)
-        for effect, top, bottom, spread in (("clouds", 15, 25, 50), ("storm_clouds", 30, 30, 100)):
+        # Both effect IDs use one canonical Clouds component, never combo copies.
+        for effect, top, bottom, spread in (("clouds", 30, 30, 100), ("storm_clouds", 30, 30, 100)):
             await self.coordinator.async_set_control("effect", effect)
             restarted = backend.coordinator.WeatherEffectsCoordinator(self.hass, self.entry)
             runtime = await restarted._async_update_data()

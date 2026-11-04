@@ -209,9 +209,10 @@ class ControlsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(controls["opacity"].native_value, .4)
         await self.coordinator.async_set_control("settings_effect", "sun")
         self.assertEqual(controls["speed"].native_value, 1)
-        self.assertEqual(controls["cloud_top"].native_value, 10)
-        self.assertEqual(controls["cloud_bottom"].native_value, 30)
-        self.assertEqual(controls["cloud_spread"].native_value, 80)
+        # Cloud controls remain canonical Clouds even after changing edit target.
+        self.assertEqual(controls["cloud_top"].native_value, 20)
+        self.assertEqual(controls["cloud_bottom"].native_value, 40)
+        self.assertEqual(controls["cloud_spread"].native_value, 70)
         await self.coordinator.async_set_control("speed", 1.8)
         self.assertEqual(controls["speed"].native_value, 1.8)
         await self.coordinator.async_set_control("settings_effect", "rain")
